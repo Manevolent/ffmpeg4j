@@ -16,9 +16,12 @@ This library runs FFmpeg native routines within the JRE, via JNI.  You do not ne
 # Examples
 
 ### Read an audio file
-```
+```java
+InputStream inputStream = new FileInputStream("example.ogg");
 FFmpegInput input = new FFmpegInput(inputStream);
 FFmpegSourceStream stream = input.open(inputFormat);
+
+// Read the file header, and register substreams in FFmpeg4j
 stream.registerStreams();
 
 AudioSourceSubstream audioSourceSubstream = null;
