@@ -1,6 +1,6 @@
 # ffmpeg4j
 
-FFmpeg4j is a Java library that wraps the functionality of the popular open-source multimedia library FFmpeg (https://www.ffmpeg.org/), whose JNI bindings are excellently exposed through JavaCPP.  This preserves the cross-platform benefits of the JRE, while still delivering the full features and performance benefits of the FFmpeg library in an OOP fashion.
+FFmpeg4j is a Java library that wraps the functionality of the popular open-source multimedia library FFmpeg (https://www.ffmpeg.org/), whose JNI bindings are excellently exposed through JavaCPP (https://github.com/bytedeco/javacpp).  This preserves the cross-platform benefits of the JRE, while still delivering the full features and performance benefits of the FFmpeg library in an OOP fashion.
 
 This library runs FFmpeg native routines within the JRE, via JNI.  You do not need a compiled executable (i.e. ffmpeg.exe) to use ffmpeg4j, only a series of static libraries which are part of the package.
 
