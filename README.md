@@ -4,6 +4,24 @@ FFmpeg4j is a Java library that wraps the functionality of the popular open-sour
 
 This library runs FFmpeg native routines within the JRE, via JNI.  You do not need a compiled executable (i.e. ffmpeg.exe) to use ffmpeg4j, only a series of static libraries which are part of the package.
 
+# Maven
+
+If you want the latest `-SNAPSHOT`:
+
+```
+<repositories>
+	<repository>
+	    <id>jitpack.io</id>
+	    <url>https://jitpack.io</url>
+	</repository>
+</repositories>
+<dependency>
+    <groupId>com.github.manevolent</groupId>
+    <artifactId>ffmpeg4j</artifactId>
+    <version>-SNAPSHOT</version>
+</dependency>
+```
+
 # Features
 
  - A (partly complete) wrapper around the core behaviors of the FFmpeg library: audio, video, and their containing file formats.
