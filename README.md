@@ -9,4 +9,4 @@ FFmpeg4j is a Java library that wraps the functionality of the popular open-sour
  - Tested for stability and optimized for the least wrapper overhead
  - Capable of delivering great apps like music bots, video transcoders, and livestream propogation
  - Sensible structure to fit within a Java development environment; don't deal directly with the C-like constructs exposed by JavaCPP.
- - Utilize standard OutputStream and InputStream objects to read and write media, something I desparately needed and couldn't find in other Java FFmpeg wrappers.
+ - Utilize standard OutputStream and InputStream objects to read and write media, something I desparately needed and couldn't find in other Java FFmpeg wrappers.  Avoid hitting the disk altogether!
