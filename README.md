@@ -12,3 +12,32 @@ This library runs FFmpeg native routines within the JRE, via JNI.  You do not ne
  - Capable of delivering great apps like music bots, video transcoders, and livestream propogation
  - Sensible structure to fit within a Java development environment; don't deal directly with the C-like constructs exposed by JavaCPP.
  - Utilize standard OutputStream and InputStream objects to read and write media, something I desparately needed and couldn't find in other Java FFmpeg wrappers.  Avoid hitting the disk altogether!
+
+# Examples
+
+### Read an audio file
+```
+FFmpegInput input = new FFmpegInput(inputStream);
+FFmpegSourceStream stream = input.open(inputFormat);
+stream.registerStreams();
+
+AudioSourceSubstream audioSourceSubstream = null;
+for (MediaSourceSubstream substream : stream.getSubstreams()) {
+    if (substream.getMediaType() != MediaType.AUDIO) continue;
+
+    audioSourceSubstream = (AudioSourceSubstream) substream;
+}
+
+if (audioSourceSubstream == null) throw new NullPointerException();
+
+AudioFrame frame;
+
+while (true) {
+    try {
+        frame = audioSourceSubstream.next();
+        float[] interleaved_ABABAB_AudioSamples = frame.getSamples();
+    } catch (EOFException ex) {
+        break;
+    }
+}
+```
