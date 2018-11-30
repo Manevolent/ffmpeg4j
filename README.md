@@ -107,7 +107,7 @@ private void transcode(InputStream inputStream,
                        sourceStream.getSubstreams().stream().filter(x -> x instanceof VideoSourceSubstream)
                                .findFirst().orElse(null);
                                     
-       VideoSourceSubstream defaultVideoSubstream = new FFmpegVideoRescaleFilter(
+       VideoFilter videoFilter = new FFmpegVideoRescaleFilter(
                defaultVideoSubstream.getFormat(),
                targetVideoFormat,
                sourceStream.getPixelFormat()
