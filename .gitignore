@@ -1,0 +1,25 @@
+syntax: regexp
+*.class
+*.classpath
+.idea/
+runtime/
+out/
+*.eml
+*.iml
+*.userlibraries
+*.log
+*.sql
+*.sqlite
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
