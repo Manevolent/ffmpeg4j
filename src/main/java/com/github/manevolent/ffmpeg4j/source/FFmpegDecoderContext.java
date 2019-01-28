@@ -8,6 +8,12 @@ public interface FFmpegDecoderContext {
     avcodec.AVCodecContext getCodecContext();
 
     /**
+     * Finds if the decoder is currently decoding, or if it is instead discarding packets.
+     * @return true if decoding is taking place, false otherwise.
+     */
+    boolean isDecoding();
+
+    /**
      * Decode callback for the decoder.
      * @param frame Frame to decode.
      * @throws FFmpegException

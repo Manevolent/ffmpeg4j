@@ -16,6 +16,7 @@ public abstract class MediaSourceSubstream<T> extends MediaStream {
     private final MediaType mediaType;
     private volatile double lost;
     private final SourceStream parent;
+    private boolean decoding = true;
 
     protected MediaSourceSubstream(SourceStream parent, MediaType mediaType) {
         this.parent = parent;
@@ -57,7 +58,10 @@ public abstract class MediaSourceSubstream<T> extends MediaStream {
      */
     public T next() throws IOException {
         while (frameQueue.size() <= 0)
+        {
+            if (!isDecoding()) throw new IOException(new IllegalStateException("not decoding"));
             read();
+        }
 
         return tryNext();
     }
@@ -92,4 +96,11 @@ public abstract class MediaSourceSubstream<T> extends MediaStream {
         this.lost = lost;
     }
 
+    public boolean isDecoding() {
+        return decoding;
+    }
+
+    public void setDecoding(boolean decoding) {
+        this.decoding = decoding;
+    }
 }

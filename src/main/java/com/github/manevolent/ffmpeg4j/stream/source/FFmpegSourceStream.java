@@ -116,56 +116,61 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
     @Override
     public Packet readPacket() throws IOException {
         try {
-            int result;
+            while (true) {
+                int result;
 
-            // VLC kind-of does this:
-            avcodec.AVPacket packet = new avcodec.AVPacket();
-            avcodec.av_init_packet(packet);
+                // VLC kind-of does this:
+                avcodec.AVPacket packet = new avcodec.AVPacket();
+                avcodec.av_init_packet(packet);
 
-            // av_read_frame may not be thread safe
-            synchronized (readLock) {
-                if (!registered) registerStreams();
+                // av_read_frame may not be thread safe
+                synchronized (readLock) {
+                    if (!registered) registerStreams();
 
-                for (; ; ) {
-                    result = avformat.av_read_frame(input.getContext(), packet);
-                    if (result != -11) {
-                        break; // -11 means "try again" basically.
+                    for (; ; ) {
+                        result = avformat.av_read_frame(input.getContext(), packet);
+                        if (result != -11) {
+                            break; // -11 means "try again" basically.
+                        }
                     }
                 }
-            }
 
-            try {
-                // Manual EOF checking here because an EOF is very important to the upper layers.
-                if (result == avutil.AVERROR_EOF) throw new EOFException();
-                else if (result == avutil.AVERROR_ENOMEM()) throw new OutOfMemoryError();
+                try {
+                    // Manual EOF checking here because an EOF is very important to the upper layers.
+                    if (result == avutil.AVERROR_EOF) throw new EOFException();
+                    else if (result == avutil.AVERROR_ENOMEM()) throw new OutOfMemoryError();
 
-                FFmpegError.checkError("av_read_frame", result);
+                    FFmpegError.checkError("av_read_frame", result);
 
-                // NOT USED: In case createdTime doesn't get set.
-                if ((packet.flags() & avcodec.AV_PKT_FLAG_KEY) == avcodec.AV_PKT_FLAG_KEY &&
-                        getCreatedTime() <= 0D)
-                    setCreatedTime(System.currentTimeMillis() / 1000D);
+                    // NOT USED: In case createdTime doesn't get set.
+                    if ((packet.flags() & avcodec.AV_PKT_FLAG_KEY) == avcodec.AV_PKT_FLAG_KEY &&
+                            getCreatedTime() <= 0D)
+                        setCreatedTime(System.currentTimeMillis() / 1000D);
 
-                if ((packet.flags() & avcodec.AV_PKT_FLAG_CORRUPT) == avcodec.AV_PKT_FLAG_CORRUPT)
-                    throw new IOException("read corrupt packet");
+                    if ((packet.flags() & avcodec.AV_PKT_FLAG_CORRUPT) == avcodec.AV_PKT_FLAG_CORRUPT)
+                        throw new IOException("read corrupt packet");
 
-                // Find the substream and its native context associated with this packet:
-                FFmpegDecoderContext substream = getSubstream(packet.stream_index());
+                    // Find the substream and its native context associated with this packet:
+                    FFmpegDecoderContext substream = getSubstream(packet.stream_index());
 
-                // Handle any null contexts:
-                if (substream == null)
-                    throw new IOException("attempted to decode packet on null substream: " + packet.stream_index());
+                    // Handle any null contexts:
+                    if (substream == null)
+                        throw new IOException("attempted to decode packet on null substream: " + packet.stream_index());
 
-                int size = packet.size();
-                if (size <= 0) return null;
+                    if (!substream.isDecoding())
+                        continue;
 
-                int finished = substream.decodePacket(packet);
-                if (finished <= 0) return null;
+                    int size = packet.size();
+                    if (size <= 0) return null;
 
-                return new Packet((MediaSourceSubstream) substream, size, finished);
-            } finally {
-                // VLC media player does this
-                avcodec.av_packet_unref(packet);
+                    int finished = substream.decodePacket(packet);
+                    if (finished <= 0) return null;
+
+                    return new Packet((MediaSourceSubstream) substream, size, finished);
+                } finally {
+                    // VLC media player does this
+                    avcodec.av_packet_unref(packet);
+                }
             }
         } catch (FFmpegException ex) {
             throw new IOException(ex);
