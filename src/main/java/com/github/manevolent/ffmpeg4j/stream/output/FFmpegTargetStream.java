@@ -185,7 +185,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
 
         // some formats want stream headers to be separate
         if ((formatContext.oformat().flags() & avformat.AVFMT_GLOBALHEADER) == avformat.AVFMT_GLOBALHEADER)
-            codecContext.flags(codecContext.flags() | avcodec.CODEC_FLAG_GLOBAL_HEADER);
+            codecContext.flags(codecContext.flags() | avcodec.AV_CODEC_FLAG_GLOBAL_HEADER);
 
         // pull in options
         avutil.AVDictionary optionDictionary = new avutil.AVDictionary();
@@ -299,7 +299,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
 
         // some formats want stream headers to be separate
         if ((formatContext.oformat().flags() & avformat.AVFMT_GLOBALHEADER) == avformat.AVFMT_GLOBALHEADER)
-            codecContext.flags(codecContext.flags() | avcodec.CODEC_FLAG_GLOBAL_HEADER);
+            codecContext.flags(codecContext.flags() | avcodec.AV_CODEC_FLAG_GLOBAL_HEADER);
 
 
         // pull in options
