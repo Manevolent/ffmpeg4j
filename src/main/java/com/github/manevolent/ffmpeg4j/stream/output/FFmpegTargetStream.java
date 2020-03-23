@@ -278,7 +278,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
             boolean channelLayoutSupported = false;
             for (int i = 0; !channelLayoutSupported; i++) {
                 long channelLayout = codecContext.codec().channel_layouts().get(i);
-                if (channelLayout == sample_rate)
+                if (channelLayout == channel_layout)
                     channelLayoutSupported = true;
                 else if (channelLayout <= 0)
                     break;
