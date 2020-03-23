@@ -6,7 +6,7 @@
 
     <groupId>com.github.manevolent</groupId>
     <artifactId>ffmpeg4j</artifactId>
-    <version>4.1-1.4.4-1-SNAPSHOT</version>
+    <version>4.1-1.4.4-1</version>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
