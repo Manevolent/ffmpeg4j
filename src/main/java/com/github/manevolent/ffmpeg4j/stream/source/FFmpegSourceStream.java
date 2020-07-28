@@ -155,7 +155,7 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
 
                     // Handle any null contexts:
                     if (substream == null)
-                        throw new IOException("attempted to decode packet on null substream: " + packet.stream_index());
+                        continue;
 
                     if (!substream.isDecoding())
                         continue;

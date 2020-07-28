@@ -7,6 +7,7 @@ import org.bytedeco.javacpp.avformat;
 import org.bytedeco.javacpp.avutil;
 
 import java.io.InputStream;
+import java.util.logging.Level;
 
 import static org.bytedeco.javacpp.avformat.*;
 
@@ -110,11 +111,14 @@ public class FFmpegInput implements AutoCloseable, FFmpegFormatContext {
 
         // Find the decoder based on the codec ID of the stream.
         avcodec.AVCodec codec = avcodec.avcodec_find_decoder(codecId);
-        if (codec == null)
-            throw new FFmpegException(
-                    "avcodec_find_decoder: unknown codec id=" + codecId + " for stream index="
-                    + stream_index + "."
+        if (codec == null) {
+            Logging.LOGGER.log(Level.FINE,
+                    "registerStream/avcodec_find_decoder: no decoder for codec id=" + codecId + " for stream index="
+                            + stream_index + "."
             );
+
+            return false;
+        }
 
         // Open the codec. This was very tricky in the conceptual development phase, because I did not realize that
         // the 'ctx' object needs to have parameters (at least for HVC/264 video). It seems that these parameters are
