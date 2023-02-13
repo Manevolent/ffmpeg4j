@@ -1,9 +1,5 @@
 package com.github.manevolent.ffmpeg4j;
 
-import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avformat;
-import org.bytedeco.javacpp.avutil;
-
 import java.util.logging.Level;
 import java.util.logging.Logger;
 

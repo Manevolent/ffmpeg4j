@@ -1,12 +1,12 @@
 package com.github.manevolent.ffmpeg4j.stream;
 
-import org.bytedeco.javacpp.avformat;
+import org.bytedeco.ffmpeg.avformat.*;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public interface FFmpegFormatContext {
-    avformat.AVFormatContext getFormatContext();
+    AVFormatContext getFormatContext();
 
     default void setFlag(int flag, boolean value) {
         if (!value)

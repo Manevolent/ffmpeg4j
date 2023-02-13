@@ -2,21 +2,20 @@ package com.github.manevolent.ffmpeg4j;
 
 import com.github.manevolent.ffmpeg4j.stream.FFmpegFormatContext;
 import com.github.manevolent.ffmpeg4j.stream.source.FFmpegSourceStream;
-import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avformat;
-import org.bytedeco.javacpp.avutil;
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avformat.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
 
 import java.io.InputStream;
 import java.util.logging.Level;
-
-import static org.bytedeco.javacpp.avformat.*;
 
 /**
  * Represents the native input functionality for FFmpeg, at the container level (mp4, flv, etc).
  */
 public class FFmpegInput implements AutoCloseable, FFmpegFormatContext {
     private static final Object openLock = new Object();
-    private final avformat.AVFormatContext formatContext;
+    private final AVFormatContext formatContext;
     private final FFmpegIO io;
     private volatile boolean opened = false;
 
@@ -83,10 +82,10 @@ public class FFmpegInput implements AutoCloseable, FFmpegFormatContext {
         // Contrary to belief, it doesn't seek. It just buffers up packets.
         FFmpegError.checkError(
                 "avformat_find_stream_info",
-                avformat.avformat_find_stream_info(formatContext, (avutil.AVDictionary) null)
+                avformat.avformat_find_stream_info(formatContext, (AVDictionary) null)
         );
 
-        avformat.av_dump_format(formatContext, 0, "", 0);
+        //avformat.av_dump_format(formatContext, 0, "", 0);
 
         return new FFmpegSourceStream(this);
     }
@@ -103,14 +102,13 @@ public class FFmpegInput implements AutoCloseable, FFmpegFormatContext {
 
         // Find the stream in the format.
         AVStream stream = formatContext.streams(stream_index);
-        avcodec.AVCodecContext ctx = stream.codec();
 
         // Find the codec ID of the stream.
-        int codecId = ctx.codec_id();
+        int codecId = stream.codecpar().codec_id();
         FFmpegError.checkError("codec_id", codecId);
 
         // Find the decoder based on the codec ID of the stream.
-        avcodec.AVCodec codec = avcodec.avcodec_find_decoder(codecId);
+        AVCodec codec = avcodec.avcodec_find_decoder(codecId);
         if (codec == null) {
             Logging.LOGGER.log(Level.FINE,
                     "registerStream/avcodec_find_decoder: no decoder for codec id=" + codecId + " for stream index="
@@ -124,12 +122,14 @@ public class FFmpegInput implements AutoCloseable, FFmpegFormatContext {
         // the 'ctx' object needs to have parameters (at least for HVC/264 video). It seems that these parameters are
         // available by retrieving the pointer for the AVStream's AVCodecContext (see ctx = stream.codec(); above).
         synchronized (openLock) { // avcodec_open2 is not thread-safe apparently.
+            AVCodecContext codecContext = avcodec.avcodec_alloc_context3(codec);
+
             // https://stackoverflow.com/questions/9652760/how-to-set-decode-pixel-format-in-libavcodec
             //  P.S. the place to stick in the overriding callback would be before the
             //  avcodec_open. Mind you, it's been a while since I looked at this stuff.
-            ctx.get_format(sourceStream.getGet_format_callback());
+            codecContext.get_format(sourceStream.getGet_format_callback());
 
-            FFmpegError.checkError("avcodec_open2", avcodec.avcodec_open2(ctx, codec, (avutil.AVDictionary) null));
+            FFmpegError.checkError("avcodec_open2", avcodec.avcodec_open2(codecContext, codec, (AVDictionary) null));
         }
 
         // Assign the stream to the substream.

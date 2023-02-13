@@ -6,6 +6,10 @@ import com.github.manevolent.ffmpeg4j.output.FFmpegAudioTargetSubstream;
 import com.github.manevolent.ffmpeg4j.output.FFmpegVideoTargetSubstream;
 import com.github.manevolent.ffmpeg4j.output.MediaTargetSubstream;
 import com.github.manevolent.ffmpeg4j.stream.FFmpegFormatContext;
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avformat.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
 import org.bytedeco.javacpp.*;
 
 import java.io.EOFException;
@@ -13,24 +17,23 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Logger;
 
 public class FFmpegTargetStream extends TargetStream implements FFmpegFormatContext {
-    private final avformat.AVFormatContext formatContext;
+    private final AVFormatContext formatContext;
     private final FFmpegIO io;
     private final List<MediaTargetSubstream> substreams = new ArrayList<>();
     private final FFmpegPacketOutput packetOutput;
 
     private final Object closeLock = new Object();
 
-    private int pixelFormat = avutil.AV_PIX_FMT_RGB24;
+    private int pixelFormat = org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGB24;
 
     private boolean closed;
 
     public FFmpegTargetStream(String formatName, FFmpegIO io, FFmpegPacketOutput packetOutput) throws FFmpegException {
         this.io = io;
 
-        avformat.AVOutputFormat outputFormat = avformat.av_guess_format(formatName, (String)null, (String)null);
+        AVOutputFormat outputFormat = avformat.av_guess_format(formatName, (String)null, (String)null);
         if (outputFormat == null) throw new IllegalArgumentException("unknown output format");
 
         this.formatContext = avformat.avformat_alloc_context();
@@ -56,7 +59,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
                 "avformat_alloc_output_context2",
                 avformat.avformat_alloc_output_context2(
                         formatContext, // is set to the created format context, or to NULL in case of failure
-                        (avformat.AVOutputFormat) null, // 	format to use for allocating the context, if NULL format_name and filename are used instead
+                        (AVOutputFormat) null, // 	format to use for allocating the context, if NULL format_name and filename are used instead
                         formatName, // the name of output format to use for allocating the context, if NULL filename is used instead
                         url // the name of the filename to use for allocating the context, may be NULL
                 )
@@ -65,7 +68,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         if (formatContext.isNull()) throw new NullPointerException();
         if (formatContext.oformat().isNull()) throw new NullPointerException();
 
-        formatContext.pb(new avformat.AVIOContext());
+        formatContext.pb(new AVIOContext());
 
         if (!isFlagSet(avformat.AVFMT_NOFILE)) {
             FFmpegError.checkError(
@@ -85,11 +88,11 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         return formatContext.nb_streams();
     }
 
-    private avformat.AVIOContext getAVIOContext() {
+    private AVIOContext getAVIOContext() {
         return this.formatContext.pb();
     }
 
-    private void setAVIOContext(avformat.AVIOContext context) {
+    private void setAVIOContext(AVIOContext context) {
         enableCustomIO();
         this.formatContext.pb(context);
     }
@@ -99,11 +102,11 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
     }
 
     public void writeFFmpegHeader() throws FFmpegException {
-        avformat.av_dump_format(formatContext, 0, (String) null, 1);
+        //avformat.av_dump_format(formatContext, 0, (String) null, 1);
 
         FFmpegError.checkError(
                 "avformat_write_header",
-                avformat.avformat_write_header(formatContext, (avutil.AVDictionary) null)
+                avformat.avformat_write_header(formatContext, (AVDictionary) null)
         );
     }
 
@@ -131,13 +134,13 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
     public FFmpegVideoTargetSubstream registerVideoSubstream(String codecName,
                                                              int width, int height, double fps,
                                                              Map<String, String> options) throws FFmpegException {
-        avcodec.AVCodec codec = avcodec.avcodec_find_encoder_by_name(codecName);
+        AVCodec codec = org.bytedeco.ffmpeg.global.avcodec.avcodec_find_encoder_by_name(codecName);
         if (codec == null) throw new FFmpegException("unrecognized video codec: " + codecName);
 
         return registerVideoSubstream(codec, width, height, fps, options);
     }
 
-    public FFmpegVideoTargetSubstream registerVideoSubstream(avcodec.AVCodec codec,
+    public FFmpegVideoTargetSubstream registerVideoSubstream(AVCodec codec,
                                                              int width, int height, double fps,
                                                              Map<String, String> options) throws FFmpegException {
         if (codec.type() != avutil.AVMEDIA_TYPE_VIDEO)
@@ -146,13 +149,13 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         codec = avcodec.avcodec_find_encoder(codec.id());
         if (codec == null) throw new FFmpegException("video codec does not have encoder");
 
-        avformat.AVStream stream = avformat.avformat_new_stream(formatContext, codec);
+        AVStream stream = avformat.avformat_new_stream(formatContext, codec);
         if (stream == null) throw new FFmpegException("could not create video substream");
 
         // Assign a stream ID to this encoder.
         stream.id(formatContext.nb_streams() - 1);
 
-        avcodec.AVCodecContext codecContext = stream.codec();
+        AVCodecContext codecContext = avcodec.avcodec_alloc_context3(codec);
 
         // Set up appropriate pixel format target
         Collection<Integer> supported_formats = FFmpeg.readPointer(codec.pix_fmts());
@@ -188,7 +191,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
             codecContext.flags(codecContext.flags() | avcodec.AV_CODEC_FLAG_GLOBAL_HEADER);
 
         // pull in options
-        avutil.AVDictionary optionDictionary = new avutil.AVDictionary();
+        AVDictionary optionDictionary = new AVDictionary();
         for (Map.Entry<String,String> option : options.entrySet()) {
             FFmpegError.checkError(
                     "av_dict_set/" + option.getKey(),
@@ -204,6 +207,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         FFmpegVideoTargetSubstream videoTargetSubstream = new FFmpegVideoTargetSubstream(
                 this,
                 stream,
+                codecContext,
                 fps
         );
 
@@ -226,7 +230,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
     public FFmpegAudioTargetSubstream registerAudioSubstream(String codecName,
                                                              int sample_rate, int channels, long channel_layout,
                                                              Map<String, String> options) throws FFmpegException {
-        avcodec.AVCodec codec = avcodec.avcodec_find_encoder_by_name(codecName);
+        AVCodec codec = avcodec.avcodec_find_encoder_by_name(codecName);
         if (codec == null) throw new FFmpegException("unrecognized audio codec: " + codecName);
 
         return registerAudioSubstream(
@@ -236,7 +240,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         );
     }
 
-    public FFmpegAudioTargetSubstream registerAudioSubstream(avcodec.AVCodec codec,
+    public FFmpegAudioTargetSubstream registerAudioSubstream(AVCodec codec,
                                                              int sample_rate, int channels, long channel_layout,
                                                              Map<String, String> options) throws FFmpegException {
         if (codec.type() != avutil.AVMEDIA_TYPE_AUDIO)
@@ -245,12 +249,12 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         codec = avcodec.avcodec_find_encoder(codec.id());
         if (codec == null) throw new FFmpegException("audio codec does not have encoder");
 
-        avformat.AVStream stream = avformat.avformat_new_stream(formatContext, codec);
+        AVStream stream = avformat.avformat_new_stream(formatContext, codec);
         if (stream == null) throw new RuntimeException("could not create audio substream");
 
         stream.id(formatContext.nb_streams() - 1);
 
-        avcodec.AVCodecContext codecContext = stream.codec();
+        AVCodecContext codecContext = avcodec.avcodec_alloc_context3(codec);
 
         int sampleFormat = -1;
         for (int i = 0; ; i ++) {
@@ -303,7 +307,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
 
 
         // pull in options
-        avutil.AVDictionary optionDictionary = new avutil.AVDictionary();
+        AVDictionary optionDictionary = new AVDictionary();
         for (Map.Entry<String,String> option : options.entrySet()) {
             FFmpegError.checkError(
                     "av_dict_set/" + option.getKey(),
@@ -318,7 +322,8 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
 
         FFmpegAudioTargetSubstream audioTargetSubstream = new FFmpegAudioTargetSubstream(
                 this,
-                stream
+                stream,
+                codecContext
         );
 
         substreams.add(audioTargetSubstream);
@@ -377,7 +382,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegTargetStream.close() completed");
     }
 
-    public avformat.AVFormatContext getFormatContext() {
+    public AVFormatContext getFormatContext() {
         return formatContext;
     }
 
@@ -386,7 +391,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         return substreams;
     }
 
-    public void writePacket(avcodec.AVPacket packet) throws FFmpegException, EOFException {
+    public void writePacket(AVPacket packet) throws FFmpegException, EOFException {
         if (packet == null || packet.isNull())
         {
             return; // Null packet -- ignore!
@@ -416,9 +421,9 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
     }
 
     public interface FFmpegPacketOutput extends AutoCloseable {
-        boolean writePacket(avformat.AVFormatContext formatContext, avcodec.AVPacket packet) throws FFmpegException, EOFException;
+        boolean writePacket(AVFormatContext formatContext, AVPacket packet) throws FFmpegException, EOFException;
 
-        default void flush(avformat.AVFormatContext formatContext) throws FFmpegException {
+        default void flush(AVFormatContext formatContext) throws FFmpegException {
             // Do nothing
         }
 
@@ -429,7 +434,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
 
     public static class FFmpegNativeOutput implements FFmpegPacketOutput {
         @Override
-        public boolean writePacket(avformat.AVFormatContext formatContext, avcodec.AVPacket packet)
+        public boolean writePacket(AVFormatContext formatContext, AVPacket packet)
                 throws FFmpegException, EOFException {
             if (packet.size() == 0) return false; // Skip packet.
 
@@ -445,7 +450,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         }
 
         @Override
-        public void flush(avformat.AVFormatContext formatContext) throws FFmpegException {
+        public void flush(AVFormatContext formatContext) throws FFmpegException {
             FFmpegError.checkError(
                     "av_interleaved_write_frame(formatContext, null)",
                     avformat.av_interleaved_write_frame(formatContext, null)

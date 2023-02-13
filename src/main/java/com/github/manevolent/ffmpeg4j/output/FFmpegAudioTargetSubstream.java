@@ -2,6 +2,11 @@ package com.github.manevolent.ffmpeg4j.output;
 
 import com.github.manevolent.ffmpeg4j.*;
 import com.github.manevolent.ffmpeg4j.stream.output.FFmpegTargetStream;
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avformat.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
+import org.bytedeco.ffmpeg.swresample.*;
 import org.bytedeco.javacpp.*;
 
 import java.io.EOFException;
@@ -16,11 +21,12 @@ public class FFmpegAudioTargetSubstream
     private static final int SAMPLE_FORMAT = avutil.AV_SAMPLE_FMT_FLT;
 
     private final FFmpegTargetStream targetStream;
-    private final avformat.AVStream stream;
-    private final avcodec.AVPacket packet;
+    private final AVStream stream;
+    private final AVCodecContext codecContext;
+    private final AVPacket packet;
 
     //swresample
-    private volatile swresample.SwrContext swrContext;
+    private volatile SwrContext swrContext;
     private final int outputBytesPerSample, inputBytesPerSample, inputPlanes, outputPlanes;
     private ByteBuffer presampleOutputBuffer = ByteBuffer.allocate(0);
     private final BytePointer[] samples_in;
@@ -30,27 +36,28 @@ public class FFmpegAudioTargetSubstream
 
     private int sampleBufferPosition = 0;
     private final float[] sampleBuffer;
-    private final avutil.AVRational nativeTimeBase;
+    private final AVRational nativeTimeBase;
     private volatile long writtenSamples = 0L;
 
-    public FFmpegAudioTargetSubstream(FFmpegTargetStream targetStream, avformat.AVStream stream) throws FFmpegException {
-        this.packet = new avcodec.AVPacket();
+    public FFmpegAudioTargetSubstream(FFmpegTargetStream targetStream, AVStream stream, AVCodecContext codecContext) throws FFmpegException {
+        this.packet = new AVPacket();
         this.targetStream = targetStream;
         this.stream = stream;
+        this.codecContext = codecContext;
 
         // Configure input parameters
         int ffmpegInputFormat = SAMPLE_FORMAT;
-        int inputChannels = stream.codec().channels();
+        int inputChannels = stream.codecpar().channels();
         inputPlanes = avutil.av_sample_fmt_is_planar(ffmpegInputFormat) != 0 ? inputChannels : 1;
-        int inputSampleRate = stream.codec().sample_rate();
+        int inputSampleRate = stream.codecpar().sample_rate();
         inputBytesPerSample = avutil.av_get_bytes_per_sample(ffmpegInputFormat);
         int inputFrameSize = (16*1024) * inputPlanes * inputBytesPerSample;
 
         // Configure output parameters
-        int ffmpegOutputFormat = stream.codec().sample_fmt();
-        int outputChannels = stream.codec().channels();
+        int ffmpegOutputFormat = stream.codecpar().format();
+        int outputChannels = stream.codecpar().channels();
         outputPlanes = avutil.av_sample_fmt_is_planar(ffmpegOutputFormat) != 0 ? outputChannels : 1;
-        int outputSampleRate = stream.codec().sample_rate();
+        int outputSampleRate = stream.codecpar().sample_rate();
         outputBytesPerSample = avutil.av_get_bytes_per_sample(ffmpegOutputFormat);
         int outputFrameSize = avutil.av_samples_get_buffer_size(
                 (IntPointer) null,
@@ -64,14 +71,14 @@ public class FFmpegAudioTargetSubstream
                 null,
 
                 // Output configuration
-                stream.codec().channel_layout(),
+                stream.codecpar().channel_layout(),
                 ffmpegOutputFormat,
-                stream.codec().sample_rate(),
+                stream.codecpar().sample_rate(),
 
                 // Input configuration
-                stream.codec().channel_layout(),
+                stream.codecpar().channel_layout(),
                 ffmpegInputFormat,
-                stream.codec().sample_rate(),
+                stream.codecpar().sample_rate(),
 
                 0, null
         );
@@ -104,12 +111,12 @@ public class FFmpegAudioTargetSubstream
         for (int i = 0; i < samples_in.length; i++)
             samples_in_ptr.put(i, samples_in[i]);
 
-        this.nativeTimeBase = new avutil.AVRational();
+        this.nativeTimeBase = new AVRational();
         nativeTimeBase.num(1);
         nativeTimeBase.den(outputSampleRate);
 
         // Smp buffer is 2 frames long, always
-        this.sampleBuffer = new float[(stream.codec().frame_size() * outputChannels) * 2];
+        this.sampleBuffer = new float[(stream.codecpar().frame_size() * outputChannels) * 2];
     }
 
     @Override
@@ -145,14 +152,14 @@ public class FFmpegAudioTargetSubstream
             samples[i] = Math.min(1F, Math.max(-1F, samples[i]));
 
         // Obtain a 'samplesToRead' worth (chunk) of frames from the sample buffer
-        presampleOutputBuffer.asFloatBuffer().put(samples, 0, len * stream.codec().channels());
+        presampleOutputBuffer.asFloatBuffer().put(samples, 0, len * stream.codecpar().channels());
 
         samples_in[0].position(0).put(presampleOutputBuffer.array(), 0, ffmpegNativeLength);
 
         int outputCount =
                 (int) Math.min(
                         (samples_out[0].limit() - samples_out[0].position()) /
-                                (stream.codec().channels() * outputBytesPerSample),
+                                (stream.codecpar().channels() * outputBytesPerSample),
                         Integer.MAX_VALUE
                 );
 
@@ -168,15 +175,15 @@ public class FFmpegAudioTargetSubstream
 
         if (ret == 0) return 0;
 
-        avutil.AVFrame frame = avutil.av_frame_alloc();
+        AVFrame frame = avutil.av_frame_alloc();
         if (frame == null) throw new NullPointerException("av_frame_alloc");
 
         try {
             frame.nb_samples(ret);
-            frame.format(stream.codec().sample_fmt());
-            frame.channels(stream.codec().channels());
-            frame.channel_layout(stream.codec().channel_layout());
-            frame.pts(avutil.av_rescale_q(writtenSamples, nativeTimeBase, stream.codec().time_base()));
+            frame.format(stream.codecpar().format());
+            frame.channels(stream.codecpar().channels());
+            frame.channel_layout(stream.codecpar().channel_layout());
+            frame.pts(avutil.av_rescale_q(writtenSamples, nativeTimeBase, getCodecContext().time_base()));
 
             for (int plane = 0; plane < outputPlanes; plane++)
                 frame.data(plane, samples_out[plane]);
@@ -187,7 +194,7 @@ public class FFmpegAudioTargetSubstream
         }
 
         writtenSamples += ret;
-        setPosition((double) writtenSamples / (double) stream.codec().sample_rate());
+        setPosition((double) writtenSamples / (double) stream.codecpar().sample_rate());
 
         return ret;
     }
@@ -203,11 +210,11 @@ public class FFmpegAudioTargetSubstream
      * @throws EOFException
      */
     private int drainInternalBuffer(boolean flush) throws FFmpegException, EOFException {
-        int totalFrameSize = stream.codec().frame_size() * stream.codec().channels();
+        int totalFrameSize = stream.codecpar().frame_size() * stream.codecpar().channels();
         int minimumFrameSize = flush ? 1 : totalFrameSize;
         int written = 0, encoded = 0, toWrite;
 
-        int channels = stream.codec().channels();
+        int channels = stream.codecpar().channels();
         if (channels <= 0) throw new IllegalArgumentException("channels <= 0: " + channels);
 
         while (sampleBufferPosition >= minimumFrameSize) {
@@ -288,9 +295,9 @@ public class FFmpegAudioTargetSubstream
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegAudioTargetSubstream.close() called");
 
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "avcodec_close(stream.codec())...");
-        avcodec.avcodec_close(stream.codec());
+        avcodec.avcodec_close(getCodecContext());
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(stream.codec())...");
-        avutil.av_free(stream.codec());
+        avutil.av_free(getCodecContext());
 
         // see: https://ffmpeg.org/doxygen/2.1/doc_2examples_2resampling_audio_8c-example.html
         for (int i = 0; i < samples_in.length; i++) {
@@ -317,7 +324,7 @@ public class FFmpegAudioTargetSubstream
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "swr_free(swrContext)...");
         swresample.swr_free(swrContext);
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free_packet(packet)...");
-        avcodec.av_free_packet(packet);
+        avcodec.av_packet_free(packet);
 
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegAudioTargetSubstream.close() completed");
     }
@@ -329,16 +336,16 @@ public class FFmpegAudioTargetSubstream
      * @throws EOFException
      */
     @Override
-    public void writePacket(avcodec.AVPacket packet) throws FFmpegException, EOFException {
+    public void writePacket(AVPacket packet) throws FFmpegException, EOFException {
         packet.pts(writtenSamples);
-        avcodec.av_packet_rescale_ts(packet, stream.codec().time_base(), stream.time_base());
+        avcodec.av_packet_rescale_ts(packet, getCodecContext().time_base(), stream.time_base());
         packet.stream_index(stream.index());
         getTargetStream().writePacket(packet);
     }
 
     @Override
-    public avcodec.AVCodecContext getCodecContext() {
-        return stream.codec();
+    public AVCodecContext getCodecContext() {
+        return codecContext;
     }
 
     @Override

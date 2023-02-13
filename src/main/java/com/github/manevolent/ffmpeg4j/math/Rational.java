@@ -1,6 +1,6 @@
 package com.github.manevolent.ffmpeg4j.math;
 
-import org.bytedeco.javacpp.avutil;
+import org.bytedeco.ffmpeg.avutil.*;
 
 public final class Rational {
 
@@ -10,7 +10,7 @@ public final class Rational {
           this.num = num; this.denom = denom;
      }
 
-    public static Rational fromAVRational(avutil.AVRational avRational) {
+    public static Rational fromAVRational(AVRational avRational) {
         return new Rational(
                 (long)avRational.num() & 0x00000000ffffffffL,
                 (long)avRational.den() & 0x00000000ffffffffL

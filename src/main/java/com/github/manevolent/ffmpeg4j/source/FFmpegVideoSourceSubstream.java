@@ -3,6 +3,11 @@ package com.github.manevolent.ffmpeg4j.source;
 import com.github.manevolent.ffmpeg4j.*;
 import com.github.manevolent.ffmpeg4j.math.Rational;
 import com.github.manevolent.ffmpeg4j.stream.source.FFmpegSourceStream;
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avformat.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
+import org.bytedeco.ffmpeg.swscale.*;
 import org.bytedeco.javacpp.*;
 
 import java.io.IOException;
@@ -11,13 +16,13 @@ public class FFmpegVideoSourceSubstream
         extends VideoSourceSubstream
         implements FFmpegDecoderContext {
     // FFmpeg native stuff (for video conversion)
-    private final avcodec.AVCodecContext codecContext;
+    private final AVCodecContext codecContext;
     private final BytePointer buffer;
-    private final avutil.AVFrame pFrameOut;
-    private final swscale.SwsContext sws;
+    private final AVFrame pFrameOut;
+    private final SwsContext sws;
 
     // Managed stuff
-    private final avformat.AVStream stream;
+    private final AVStream stream;
     private final FFmpegSourceStream parentStream;
     private final VideoFormat videoFormat;
 
@@ -27,15 +32,16 @@ public class FFmpegVideoSourceSubstream
 
     private int pixelFormat;
 
+    private boolean closed = false;
+
     public FFmpegVideoSourceSubstream(FFmpegSourceStream parentStream,
-                                      avformat.AVStream stream,
+                                      AVStream stream,
+                                      AVCodecContext codecContext,
                                       int pixelFormat) throws FFmpegException {
         super(parentStream);
 
         this.pixelFormat = pixelFormat;
         this.stream = stream;
-
-        avcodec.AVCodecContext codecContext = stream.codec();
 
         this.parentStream = parentStream;
         this.codecContext = codecContext;
@@ -43,10 +49,11 @@ public class FFmpegVideoSourceSubstream
         pFrameOut = avutil.av_frame_alloc();
         if (pFrameOut == null) throw new RuntimeException("failed to allocate destination frame");
 
-        this.frameSizeBytes = avcodec.avpicture_get_size(
-                pixelFormat,
-                stream.codec().width(),
-                stream.codec().height()
+        this.frameSizeBytes = avutil.av_image_get_buffer_size(
+                        pixelFormat,
+                        stream.codecpar().width(),
+                        stream.codecpar().height(),
+                        1 // used by some other methods in ffmpeg
         );
 
         buffer = new BytePointer(avutil.av_malloc(frameSizeBytes));
@@ -61,37 +68,36 @@ public class FFmpegVideoSourceSubstream
          */
 
         sws = swscale.sws_getContext(
-                stream.codec().width(), stream.codec().height(), stream.codec().pix_fmt(), // source
-                stream.codec().width(), stream.codec().height(), pixelFormat, // destination
+                stream.codecpar().width(), stream.codecpar().height(), stream.codecpar().format(), // source
+                stream.codecpar().width(), stream.codecpar().height(), pixelFormat, // destination
                 swscale.SWS_BILINEAR, // flags (see above)
                 null, null, (DoublePointer) null // filters, params
         );
 
         // Assign appropriate parts of buffer to image planes in pFrameRGB
-        // Note that pFrameRGB is an AVFrame, but AVFrame is a superset
-        // of AVPicture
-        int ret = avcodec.avpicture_fill(
-                new avcodec.AVPicture(pFrameOut),
+        // See: https://mail.gnome.org/archives/commits-list/2016-February/msg05531.html
+        FFmpegError.checkError("av_image_fill_arrays", avutil.av_image_fill_arrays(
+                pFrameOut.data(),
+                pFrameOut.linesize(),
                 buffer,
                 pixelFormat,
-                stream.codec().width(),
-                stream.codec().height()
-        );
-
-        FFmpegError.checkError("avpicture_fill", ret);
+                stream.codecpar().width(),
+                stream.codecpar().height(),
+                1
+        ));
 
         Rational rational = Rational.fromAVRational(stream.r_frame_rate());
 
         this.videoFormat = new VideoFormat(
-                stream.codec().width(),
-                stream.codec().height(),
+                stream.codecpar().width(),
+                stream.codecpar().height(),
                 rational.toDouble()
         );
     }
 
     @Override
     public int getBitRate() {
-        return (int) stream.codec().bit_rate();
+        return (int) stream.codecpar().bit_rate();
     }
 
     @Override
@@ -105,18 +111,18 @@ public class FFmpegVideoSourceSubstream
     }
 
     @Override
-    public avcodec.AVCodecContext getCodecContext() {
+    public AVCodecContext getCodecContext() {
         return codecContext;
     }
 
     @Override
-    public void decode(avutil.AVFrame frame) throws FFmpegException {
+    public void decode(AVFrame frame) throws FFmpegException {
         int ret = swscale.sws_scale(
                 sws, // the scaling context previously created with sws_getContext()
                 frame.data(), // 	the array containing the pointers to the planes of the source slice
                 frame.linesize(), // the array containing the strides for each plane of the source image
                 0, // the position in the source image of the slice to process, that is the number (counted starting from zero) in the image of the first row of the slice
-                stream.codec().height(), // the height of the source slice, that is the number of rows in the slice
+                stream.codecpar().height(), // the height of the source slice, that is the number of rows in the slice
                 pFrameOut.data(), // the array containing the pointers to the planes of the destination image
                 pFrameOut.linesize() // the array containing the strides for each plane of the destination image
         );
@@ -130,8 +136,8 @@ public class FFmpegVideoSourceSubstream
         byte[] pixelData = new byte[frameSizeBytes];
         data.position(0).get(pixelData, 0, l * frame.height());
 
-        setPosition((double) frame.pkt_dts() * Rational.fromAVRational(stream.time_base()).toDouble());
-        double position = getPosition();
+        double position = FFmpeg.timestampToSeconds(stream.time_base(), frame.pkt_dts());
+        setPosition(position);
         double time = 1D / videoFormat.getFramesPerSecond();
         double timestamp = parentStream.getCreatedTime() + position;
         parentStream.updatePacketTimestamp(timestamp);
@@ -141,8 +147,8 @@ public class FFmpegVideoSourceSubstream
                 position,
                 time,
                 pixelFormat,
-                stream.codec().width(),
-                stream.codec().height(),
+                stream.codecpar().width(),
+                stream.codecpar().height(),
                 pixelData
         ));
 
@@ -154,23 +160,30 @@ public class FFmpegVideoSourceSubstream
 
     @Override
     public void close() throws Exception {
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegVideoSourceSubstream.close() called");
+        synchronized (this) {
+            if (closed) {
+                throw new IllegalStateException("already closed");
+            }
 
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "sws_freeContext(sws)...");
-        swscale.sws_freeContext(sws);
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegVideoSourceSubstream.close() called");
 
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(buffer)...");
-        avutil.av_free(buffer);
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(pFrameOut)...");
-        avutil.av_free(pFrameOut);
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "sws_freeContext(sws)...");
+            swscale.sws_freeContext(sws);
 
-        // Close a given AVCodecContext and free all the data associated with it (but not the AVCodecContext itself).
-        // So free it afterwards.
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "avcodec_close(codecContext)...");
-        avcodec.avcodec_close(codecContext);
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(codecContext)...");
-        avutil.av_free(codecContext);
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(buffer)...");
+            avutil.av_free(buffer);
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(pFrameOut)...");
+            avutil.av_free(pFrameOut);
 
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegVideoSourceSubstream.close() completed");
+            // Close a given AVCodecContext and free all the data associated with it (but not the AVCodecContext itself).
+            // So free it afterwards.
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "avcodec_close(codecContext)...");
+            avcodec.avcodec_close(codecContext);
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(codecContext)...");
+            avutil.av_free(codecContext);
+
+            closed = true;
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegVideoSourceSubstream.close() completed");
+        }
     }
 }

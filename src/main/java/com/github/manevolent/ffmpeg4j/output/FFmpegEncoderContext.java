@@ -3,15 +3,16 @@ package com.github.manevolent.ffmpeg4j.output;
 import com.github.manevolent.ffmpeg4j.FFmpegError;
 import com.github.manevolent.ffmpeg4j.FFmpegException;
 import com.github.manevolent.ffmpeg4j.stream.output.FFmpegTargetStream;
-import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avutil;
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
 
 import java.io.EOFException;
 
 public interface FFmpegEncoderContext {
-    void writePacket(avcodec.AVPacket packet) throws FFmpegException, EOFException;
+    void writePacket(AVPacket packet) throws FFmpegException, EOFException;
 
-    avcodec.AVCodecContext getCodecContext();
+    AVCodecContext getCodecContext();
     FFmpegTargetStream getTargetStream();
 
     /**
@@ -27,7 +28,7 @@ public interface FFmpegEncoderContext {
         int packets_finished = 0;
 
         while (ret >= 0) {
-            avcodec.AVPacket packet = avcodec.av_packet_alloc();
+            AVPacket packet = avcodec.av_packet_alloc();
             if (packet == null) throw new NullPointerException("av_packet_alloc()");
 
             try {
@@ -56,7 +57,7 @@ public interface FFmpegEncoderContext {
      * @throws FFmpegException
      * @throws EOFException
      */
-    default int encodeFrame(avutil.AVFrame frame) throws FFmpegException, EOFException {
+    default int encodeFrame(AVFrame frame) throws FFmpegException, EOFException {
         int ret = -11, packet_finished = 0;
 
         while (ret == -11) {
