@@ -1,14 +1,13 @@
 package com.github.manevolent.ffmpeg4j;
 
+import org.bytedeco.ffmpeg.avformat.*;
+import org.bytedeco.ffmpeg.global.*;
 import org.bytedeco.javacpp.*;
 
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
 import java.util.logging.Level;
-
-import static org.bytedeco.javacpp.avformat.*;
 
 // http://www.codeproject.com/Tips/489450/Creating-Custom-FFmpeg-IO-Context
 public final class FFmpegIO implements AutoCloseable {
@@ -72,10 +71,6 @@ public final class FFmpegIO implements AutoCloseable {
                             "closing I/O stream id=" + id
                                     + " num_ops=" + num_ops + " total=" + total
                     );
-
-
-                    //Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "avio_close(context)...");
-                    //avformat.avio_close(context);
 
                     buffer = null;
 
@@ -260,6 +255,10 @@ public final class FFmpegIO implements AutoCloseable {
         return ioStateId;
     }
 
+    public static FFmpegIO openInput(File file, int bufferSize) throws IOException, FFmpegException {
+        return openInputStream(Files.newInputStream(file.toPath()), bufferSize);
+    }
+
     /**
      * Opens a custom AVIOContext based around the managed InputStream proved.
      * @param _inputStream InputStream instance to have FFmpeg read from.
@@ -268,6 +267,8 @@ public final class FFmpegIO implements AutoCloseable {
      */
     public static FFmpegIO openInputStream(final InputStream _inputStream, final int bufferSize)
             throws FFmpegException {
+        Objects.requireNonNull(_inputStream, "Input stream cannot be null");
+
         synchronized (ioLock) {
             // Lock an IOSTATE
             int ioStateId = allocateIOStateId();
@@ -303,6 +304,10 @@ public final class FFmpegIO implements AutoCloseable {
         }
     }
 
+
+    public static FFmpegIO openOutput(File file, int bufferSize) throws IOException, FFmpegException {
+        return openOutputStream(Files.newOutputStream(file.toPath()), bufferSize);
+    }
 
     /**
      * Opens a custom AVIOContext based around the managed OutputStream proved.

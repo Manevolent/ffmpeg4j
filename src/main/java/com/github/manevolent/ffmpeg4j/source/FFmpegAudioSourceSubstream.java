@@ -3,6 +3,11 @@ package com.github.manevolent.ffmpeg4j.source;
 import com.github.manevolent.ffmpeg4j.*;
 import com.github.manevolent.ffmpeg4j.math.Rational;
 import com.github.manevolent.ffmpeg4j.stream.source.FFmpegSourceStream;
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avformat.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
+import org.bytedeco.ffmpeg.swresample.*;
 import org.bytedeco.javacpp.*;
 
 import java.io.ByteArrayInputStream;
@@ -20,9 +25,9 @@ public class FFmpegAudioSourceSubstream
     private final AudioFormat audioFormat;
 
     // FFmpeg native stuff
-    private final avcodec.AVCodecContext codecContext;
-    private final swresample.SwrContext swrContext;
-    private final avformat.AVStream stream;
+    private final AVCodecContext codecContext;
+    private final SwrContext swrContext;
+    private final AVStream stream;
 
     private final int outputSampleRate;
     private final int outputChannels;
@@ -32,21 +37,23 @@ public class FFmpegAudioSourceSubstream
     private final BytePointer[] samples_out;
     private final PointerPointer samples_out_ptr;
 
+    private boolean closed = false;
+
     private volatile byte[] recvBuffer;
     private volatile long totalDecoded = 0L;
 
-    public FFmpegAudioSourceSubstream(FFmpegSourceStream parentStream, avformat.AVStream stream)
+    public FFmpegAudioSourceSubstream(FFmpegSourceStream parentStream, AVStream stream, AVCodecContext codecContext)
             throws FFmpegException {
         super(parentStream);
 
         this.stream = stream;
         this.parentStream = parentStream;
-        this.codecContext = stream.codec();
+        this.codecContext = codecContext;
 
-        int channels = stream.codec().channels();
+        int channels = stream.codecpar().channels();
 
         if (channels <= 0)
-            channels = avutil.av_get_channel_layout_nb_channels(stream.codec().channel_layout());
+            channels = avutil.av_get_channel_layout_nb_channels(stream.codecpar().channel_layout());
 
         if (channels <= 0)
             throw new IllegalArgumentException("channel count not discernible");
@@ -54,21 +61,21 @@ public class FFmpegAudioSourceSubstream
         this.outputChannels = channels;
 
         this.outputBytesPerSample = avutil.av_get_bytes_per_sample(OUTPUT_FORMAT);
-        this.outputSampleRate = stream.codec().sample_rate();
+        this.outputSampleRate = stream.codecpar().sample_rate();
         this.audio_input_frame_size =  256 * 1024 / outputChannels;
 
         swrContext = swresample.swr_alloc_set_opts(
                 null,
 
                 // Output configuration
-                stream.codec().channel_layout(),
+                stream.codecpar().channel_layout(),
                 OUTPUT_FORMAT,
-                stream.codec().sample_rate(),
+                stream.codecpar().sample_rate(),
 
                 // Input configuration
-                stream.codec().channel_layout(),
-                stream.codec().sample_fmt(),
-                stream.codec().sample_rate(),
+                stream.codecpar().channel_layout(),
+                stream.codecpar().format(),
+                stream.codecpar().sample_rate(),
 
                 0, null
         );
@@ -87,17 +94,17 @@ public class FFmpegAudioSourceSubstream
         samples_out = new BytePointer[avutil.av_sample_fmt_is_planar(OUTPUT_FORMAT) == 1 ? outputChannels : 1];
         for (int i = 0; i < samples_out.length; i++)
             samples_out[i] = new BytePointer(avutil.av_malloc(data_size)).capacity(data_size);
-        samples_out_ptr = new PointerPointer(avutil.AVFrame.AV_NUM_DATA_POINTERS);
+        samples_out_ptr = new PointerPointer(AVFrame.AV_NUM_DATA_POINTERS);
 
         for (int i = 0; i < samples_out.length; i++)
             samples_out_ptr.put(i, samples_out[i]);
 
-        this.audioFormat = new AudioFormat(outputSampleRate, outputChannels, stream.codec().channel_layout());
+        this.audioFormat = new AudioFormat(outputSampleRate, outputChannels, stream.codecpar().channel_layout());
     }
 
     @Override
     public int getBitRate() {
-        return (int) stream.codec().bit_rate();
+        return (int) stream.codecpar().bit_rate();
     }
 
     @Override
@@ -111,12 +118,12 @@ public class FFmpegAudioSourceSubstream
     }
 
     @Override
-    public avcodec.AVCodecContext getCodecContext() {
+    public AVCodecContext getCodecContext() {
         return codecContext;
     }
 
     @Override
-    public void decode(avutil.AVFrame frame) throws FFmpegException {
+    public void decode(AVFrame frame) throws FFmpegException {
         int outputCount =
                 (int)Math.min(
                         (samples_out[0].limit() - samples_out[0].position()) / (outputChannels * outputBytesPerSample),
@@ -150,9 +157,9 @@ public class FFmpegAudioSourceSubstream
 
         // Add packet to queue
         totalDecoded += ret;
-        double time = (double)ret / (double)outputSampleRate;
-        setPosition((double) frame.pkt_dts() * Rational.fromAVRational(stream.time_base()).toDouble());
-        double position = getPosition();
+        double time = FFmpeg.timestampToSeconds(stream.time_base(), frame.pkt_duration());
+        double position = FFmpeg.timestampToSeconds(stream.time_base(), frame.pkt_dts());
+        setPosition(position);
         double timestamp = parentStream.getCreatedTime() + position;
         parentStream.updatePacketTimestamp(timestamp);
         put(new AudioFrame(
@@ -166,30 +173,37 @@ public class FFmpegAudioSourceSubstream
 
     @Override
     public void close() throws Exception {
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegAudioSourceSubstream.close() called");
+        synchronized (this) {
+            if (closed) {
+                throw new IllegalStateException("already closed");
+            }
 
-        // see: https://ffmpeg.org/doxygen/2.1/doc_2examples_2resampling_audio_8c-example.html
-        for (int i = 0; i < samples_out.length; i++) {
-            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "deallocating samples_out[" + i + "])...");
-            avutil.av_free(samples_out[i]);
-            samples_out[i].deallocate();
-            samples_out[i] = null;
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegAudioSourceSubstream.close() called");
+
+            // see: https://ffmpeg.org/doxygen/2.1/doc_2examples_2resampling_audio_8c-example.html
+            for (int i = 0; i < samples_out.length; i++) {
+                Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "deallocating samples_out[" + i + "])...");
+                avutil.av_free(samples_out[i]);
+                samples_out[i].deallocate();
+                samples_out[i] = null;
+            }
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "deallocating samples_out_ptr...");
+            samples_out_ptr.deallocate();
+
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "swr_free(swrContext)...");
+            swresample.swr_free(swrContext);
+
+            // Close a given AVCodecContext and free all the data associated with it (but not the AVCodecContext itself).
+            // So free it afterwards.
+
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "avcodec_close(codecContext)...");
+            avcodec.avcodec_close(codecContext);
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(codecContext)...");
+            avutil.av_free(codecContext);
+
+            closed = true;
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegAudioSourceSubstream.close() complete");
         }
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "deallocating samples_out_ptr...");
-        samples_out_ptr.deallocate();
-
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "swr_free(swrContext)...");
-        swresample.swr_free(swrContext);
-
-        // Close a given AVCodecContext and free all the data associated with it (but not the AVCodecContext itself).
-        // So free it afterwards.
-
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "avcodec_close(codecContext)...");
-        avcodec.avcodec_close(codecContext);
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(codecContext)...");
-        avutil.av_free(codecContext);
-
-        Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "FFmpegAudioSourceSubstream.close() complete");
     }
 
     public static void main(String[] args) throws Exception {

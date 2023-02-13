@@ -27,6 +27,14 @@ public abstract class SourceStream extends Stream<MediaSourceSubstream> {
         lastPacketTimestamp = Math.max(newTimestamp, lastPacketTimestamp);
     }
 
+    /**
+     * Seeks to a specified point in the stream. The result of the seek operation may not be exact.
+     * @param position position to seek to, in seconds.
+     * @return final position of the seek operation, in seconds. Keep in mind due to the quantized nature of media streams this may not be equal to the
+     * requested position, but is guaranteed to be as close as possible.
+     */
+    public abstract double seek(double position) throws IOException;
+
     public abstract Packet readPacket() throws IOException;
 
     @Override
@@ -45,11 +53,15 @@ public abstract class SourceStream extends Stream<MediaSourceSubstream> {
         private final MediaSourceSubstream sourceStream;
         private final int finished;
         private final long bytesProcessed;
+        private final double position;
+        private final double duration;
 
-        public Packet(MediaSourceSubstream sourceSteram, long bytesProcessed, int finished) {
+        public Packet(MediaSourceSubstream sourceSteram, long bytesProcessed, int finished, double position, double duration) {
             this.bytesProcessed = bytesProcessed;
             this.sourceStream = sourceSteram;
             this.finished = finished;
+            this.position = position;
+            this.duration = duration;
         }
 
         public MediaSourceSubstream getSourceStream() {
@@ -62,6 +74,14 @@ public abstract class SourceStream extends Stream<MediaSourceSubstream> {
 
         public int getFinishedFrames() {
             return finished;
+        }
+
+        public double getPosition() {
+            return position;
+        }
+
+        public double getDuration() {
+            return duration;
         }
     }
 }

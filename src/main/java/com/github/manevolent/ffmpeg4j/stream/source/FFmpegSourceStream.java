@@ -1,19 +1,17 @@
 package com.github.manevolent.ffmpeg4j.stream.source;
 
-import com.github.manevolent.ffmpeg4j.FFmpegError;
-import com.github.manevolent.ffmpeg4j.FFmpegException;
-import com.github.manevolent.ffmpeg4j.FFmpegInput;
-import com.github.manevolent.ffmpeg4j.Logging;
+import com.github.manevolent.ffmpeg4j.*;
 import com.github.manevolent.ffmpeg4j.source.FFmpegAudioSourceSubstream;
 import com.github.manevolent.ffmpeg4j.source.FFmpegDecoderContext;
 import com.github.manevolent.ffmpeg4j.source.FFmpegVideoSourceSubstream;
 import com.github.manevolent.ffmpeg4j.source.MediaSourceSubstream;
 import com.github.manevolent.ffmpeg4j.stream.FFmpegFormatContext;
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avformat.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
 import org.bytedeco.javacpp.IntPointer;
 import org.bytedeco.javacpp.annotation.Cast;
-import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avformat;
-import org.bytedeco.javacpp.avutil;
 
 import java.io.EOFException;
 import java.io.IOException;
@@ -32,12 +30,14 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
     private volatile boolean closed = false;
     private final Object closeLock = new Object();
 
+    private double position = -1D;
+
     private int pixelFormat = avutil.AV_PIX_FMT_RGB24;
 
-    private final avcodec.AVCodecContext.Get_format_AVCodecContext_IntPointer get_format_callback =
-            new avcodec.AVCodecContext.Get_format_AVCodecContext_IntPointer() {
+    private final AVCodecContext.Get_format_AVCodecContext_IntPointer get_format_callback =
+            new AVCodecContext.Get_format_AVCodecContext_IntPointer() {
                 @Override
-                public int call(avcodec.AVCodecContext var1, @Cast({"const AVPixelFormat*"}) IntPointer pix_fmt_list) {
+                public int call(AVCodecContext var1, @Cast({"const AVPixelFormat*"}) IntPointer pix_fmt_list) {
                     Logging.LOGGER.log(
                             Logging.DEBUG_LOG_LEVEL,
                             "finding best pix_fmt match for decoder for " +
@@ -67,7 +67,7 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
         input.getContext().start_time_realtime(startTimeMicrosends);
     }
 
-    public final avcodec.AVCodecContext.Get_format_AVCodecContext_IntPointer getGet_format_callback() {
+    public final AVCodecContext.Get_format_AVCodecContext_IntPointer getGet_format_callback() {
         return get_format_callback;
     }
 
@@ -98,6 +98,28 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
         return (double)start_time_realtime / 1000000D;
     }
 
+    public double getPosition() {
+        return position;
+    }
+
+    @Override
+    public double seek(double position) throws IOException {
+        if (getPosition() > position) {
+            throw new IllegalStateException("Cannot rewind");
+        } else if (getPosition() == position) {
+            return position;
+        }
+
+        Packet packet;
+        while ((packet = readPacket()) != null) {
+            if (packet.getPosition() + packet.getDuration() >= position) {
+                return packet.getPosition();
+            }
+        }
+
+        throw new EOFException();
+    }
+
     @Override
     public void setCreatedTime(double createdTimeInSeconds) {
         input.getContext().start_time_realtime((long) (createdTimeInSeconds * 1000000D));
@@ -118,10 +140,7 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
         try {
             while (true) {
                 int result;
-
-                // VLC kind-of does this:
-                avcodec.AVPacket packet = new avcodec.AVPacket();
-                avcodec.av_init_packet(packet);
+                AVPacket packet = avcodec.av_packet_alloc();
 
                 // av_read_frame may not be thread safe
                 synchronized (readLock) {
@@ -129,15 +148,15 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
 
                     for (; ; ) {
                         result = avformat.av_read_frame(input.getContext(), packet);
-                        if (result != -11) {
-                            break; // -11 means "try again" basically.
+                        if (result != avutil.AVERROR_EAGAIN()) {
+                            break;
                         }
                     }
                 }
 
                 try {
                     // Manual EOF checking here because an EOF is very important to the upper layers.
-                    if (result == avutil.AVERROR_EOF) throw new EOFException();
+                    if (result == avutil.AVERROR_EOF) throw new EOFException("pos: " + getPosition() + "s");
                     else if (result == avutil.AVERROR_ENOMEM()) throw new OutOfMemoryError();
 
                     FFmpegError.checkError("av_read_frame", result);
@@ -157,16 +176,22 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
                     if (substream == null)
                         continue;
 
-                    if (!substream.isDecoding())
+                    int size = packet.size();
+                    if (size <= 0)
                         continue;
 
-                    int size = packet.size();
-                    if (size <= 0) return null;
+                    int finished;
+                    if (substream.isDecoding()) {
+                        finished = substream.decodePacket(packet);
+                    } else {
+                        finished = 0;
+                    }
 
-                    int finished = substream.decodePacket(packet);
-                    if (finished <= 0) return null;
-
-                    return new Packet((MediaSourceSubstream) substream, size, finished);
+                    AVRational timebase = getFormatContext().streams(packet.stream_index()).time_base();
+                    double position = FFmpeg.timestampToSeconds(timebase, packet.pts());
+                    this.position = position;
+                    double duration = FFmpeg.timestampToSeconds(timebase, packet.duration());
+                    return new Packet((MediaSourceSubstream) substream, size, finished, position, duration);
                 } finally {
                     // VLC media player does this
                     avcodec.av_packet_unref(packet);
@@ -177,8 +202,18 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
         }
     }
 
+    private static AVCodecContext newCodecContext(AVCodec codec, AVCodecParameters parameters) throws FFmpegException {
+        AVCodecContext context = avcodec.avcodec_alloc_context3(codec);
+        if (context == null) {
+            throw new FFmpegException("Failed to allocate AVCodecContext");
+        }
+        avcodec.avcodec_parameters_to_context(context, parameters);
+        avcodec.avcodec_open2(context, codec, (AVDictionary) null);
+        return context;
+    }
+
     public void registerSubstream(int stream_index,
-                                  avformat.AVStream stream) throws FFmpegException {
+                                  AVStream stream) throws FFmpegException {
         if (stream_index < 0 || stream_index >= substreams.length)
             throw new FFmpegException("substream ID invalid: " + stream_index);
 
@@ -186,11 +221,14 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
         if (decoderContext != null)
             throw new FFmpegException("substream already registered: " + stream_index);
 
-        switch (stream.codec().codec_type()) {
+        AVCodec codec = avcodec.avcodec_find_decoder(stream.codecpar().codec_id());
+
+        switch (stream.codecpar().codec_type()) {
             case avutil.AVMEDIA_TYPE_VIDEO:
                 FFmpegVideoSourceSubstream videoSourceStream = new FFmpegVideoSourceSubstream(
                         this,
                         stream,
+                        newCodecContext(codec, stream.codecpar()),
                         getPixelFormat()
                 );
 
@@ -200,7 +238,8 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
             case avutil.AVMEDIA_TYPE_AUDIO:
                 FFmpegAudioSourceSubstream audioSourceStream = new FFmpegAudioSourceSubstream(
                         this,
-                        stream
+                        stream,
+                        newCodecContext(codec, stream.codecpar())
                 );
 
                 substreamList.add(audioSourceStream);
@@ -209,7 +248,7 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
         }
 
         if (decoderContext == null)
-            throw new FFmpegException("unsupported codec type: " + stream.codec().codec_type());
+            throw new FFmpegException("unsupported codec type: " + stream.codecpar().codec_type());
 
         substreams[stream_index] = decoderContext;
     }
@@ -246,7 +285,7 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
     }
 
     @Override
-    public avformat.AVFormatContext getFormatContext() {
+    public AVFormatContext getFormatContext() {
         return input.getContext();
     }
 }

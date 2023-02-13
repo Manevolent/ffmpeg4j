@@ -95,7 +95,7 @@ private void transcode(InputStream inputStream,
 
    try {
        // Open input
-       avformat.AVInputFormat inputFormat = FFmpeg.getInputFormatByName(formatName);
+       AVInputFormat inputFormat = FFmpeg.getInputFormatByName(formatName);
        FFmpegSourceStream sourceStream = new FFmpegInput(input).open(inputFormat);
        
        // Read the file header, and register substreams in FFmpeg4j

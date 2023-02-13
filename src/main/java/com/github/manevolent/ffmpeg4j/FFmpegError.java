@@ -1,6 +1,7 @@
 package com.github.manevolent.ffmpeg4j;
 
-import org.bytedeco.javacpp.avutil;
+
+import org.bytedeco.ffmpeg.global.*;
 
 import java.nio.ByteBuffer;
 

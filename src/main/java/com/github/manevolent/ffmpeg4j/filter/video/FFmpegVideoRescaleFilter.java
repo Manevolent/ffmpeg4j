@@ -1,6 +1,9 @@
 package com.github.manevolent.ffmpeg4j.filter.video;
 
 import com.github.manevolent.ffmpeg4j.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
+import org.bytedeco.ffmpeg.swscale.*;
 import org.bytedeco.javacpp.*;
 
 import java.util.ArrayList;
@@ -13,9 +16,9 @@ public class FFmpegVideoRescaleFilter extends VideoFilter {
     // FFmpeg native stuff (for video conversion)
     private final BytePointer inputBuffer;
     private final BytePointer outputBuffer;
-    private final avcodec.AVPicture inputPicture;
-    private final avutil.AVFrame outputFrame;
-    private final swscale.SwsContext sws;
+    private final AVFrame inputFrame;
+    private final AVFrame outputFrame;
+    private final SwsContext sws;
 
     private final double outputFrameDuration;
     private final double inputFrameDuration;
@@ -52,16 +55,18 @@ public class FFmpegVideoRescaleFilter extends VideoFilter {
             outputFrame = avutil.av_frame_alloc();
             if (outputFrame == null) throw new RuntimeException("failed to allocate output frame");
 
-            int numBytesInput = avcodec.avpicture_get_size(
+            int numBytesInput = avutil.av_image_get_buffer_size(
                     pixelFormat,
                     input.getWidth(),
-                    input.getHeight()
+                    input.getHeight(),
+                    1 // used by some other methods in ffmpeg
             );
 
-            int numBytesOutput = avcodec.avpicture_get_size(
+            int numBytesOutput = avutil.av_image_get_buffer_size(
                     pixelFormat,
                     output.getWidth(),
-                    output.getHeight()
+                    output.getHeight(),
+                    1 // used by some other methods in ffmpeg
             );
 
             inputBuffer = new BytePointer(avutil.av_malloc(numBytesInput));
@@ -77,31 +82,33 @@ public class FFmpegVideoRescaleFilter extends VideoFilter {
             // Assign appropriate parts of buffer to image planes in pFrameRGB
             // Note that pFrameRGB is an AVFrame, but AVFrame is a superset
             // of AVPicture
-            this.inputPicture = new avcodec.AVPicture();
+            this.inputFrame = new AVFrame();
 
-            int ret = avcodec.avpicture_fill(
-                    inputPicture,
-                    inputBuffer,
-                    pixelFormat,
-                    input.getWidth(),
-                    input.getHeight()
-            );
+            // Assign appropriate parts of buffer to image planes in pFrameRGB
+            // See: https://mail.gnome.org/archives/commits-list/2016-February/msg05531.html
+            FFmpegError.checkError("av_image_fill_arrays", avutil.av_image_fill_arrays(
+                inputFrame.data(),
+                inputFrame.linesize(),
+                inputBuffer,
+                pixelFormat,
+                input.getWidth(),
+                input.getHeight(),
+                1
+            ));
 
-            FFmpegError.checkError("avpicture_fill", ret);
-
-            ret = avcodec.avpicture_fill(
-                    new avcodec.AVPicture(outputFrame),
-                    outputBuffer,
-                    pixelFormat,
-                    output.getWidth(),
-                    output.getHeight()
-            );
-
-            FFmpegError.checkError("avpicture_fill", ret);
+            FFmpegError.checkError("av_image_fill_arrays", avutil.av_image_fill_arrays(
+                outputFrame.data(),
+                outputFrame.linesize(),
+                outputBuffer,
+                pixelFormat,
+                input.getWidth(),
+                input.getHeight(),
+                1
+            ));
         } else {
             inputBuffer = null;
             outputBuffer = null;
-            inputPicture = null;
+            inputFrame = null;
             outputFrame = null;
             sws = null;
         }
@@ -133,12 +140,12 @@ public class FFmpegVideoRescaleFilter extends VideoFilter {
         VideoFrame frame;
 
         if (inputFormat.getHeight() != outputFormat.getHeight() || inputFormat.getWidth() != outputFormat.getWidth()) {
-            inputPicture.data(0).put(source.getData());
+            inputFrame.data(0).put(source.getData());
 
             int ret = swscale.sws_scale(
                     sws, // the scaling context previously created with sws_getContext()
-                    inputPicture.data(), // 	the array containing the pointers to the planes of the source slice
-                    inputPicture.linesize(), // the array containing the strides for each plane of the source image
+                    inputFrame.data(), // 	the array containing the pointers to the planes of the source slice
+                    inputFrame.linesize(), // the array containing the strides for each plane of the source image
                     0, // the position in the source image of the slice to process, that is the number (counted starting from zero) in the image of the first row of the slice
                     source.getHeight(), // the height of the source slice, that is the number of rows in the slice
                     outputFrame.data(), // the array containing the pointers to the planes of the destination image
@@ -194,7 +201,7 @@ public class FFmpegVideoRescaleFilter extends VideoFilter {
         swscale.sws_freeContext(sws);
 
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_free(inputPicture)...");
-        avutil.av_free(inputPicture);
+        avutil.av_frame_free(inputFrame);
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "av_frame_free(outputFrame)...");
         avutil.av_frame_free(outputFrame);
 

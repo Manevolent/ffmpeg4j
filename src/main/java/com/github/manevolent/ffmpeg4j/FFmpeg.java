@@ -1,13 +1,16 @@
 package com.github.manevolent.ffmpeg4j;
 
-import org.bytedeco.javacpp.IntPointer;
-import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avformat;
-import org.bytedeco.javacpp.avutil;
+import com.github.manevolent.ffmpeg4j.math.*;
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avformat.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
+import org.bytedeco.javacpp.*;
 
-import java.util.Collection;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
+import java.util.function.*;
+
+import static org.bytedeco.ffmpeg.global.avutil.av_q2d;
 
 public final class FFmpeg {
 
@@ -27,9 +30,36 @@ public final class FFmpeg {
      * Registers FFmpeg codecs and formats
      * @throws FFmpegException
      */
+    @Deprecated
     public static void register() throws FFmpegException {
-        avformat.av_register_all();
-        avcodec.avcodec_register_all();
+        // Deprecated, this does nothing the version of FFmpeg we use now
+    }
+
+    /**
+     * See: https://ffmpeg.org/pipermail/libav-user/2018-May/011160.html
+     * @return
+     */
+    private static <T extends Pointer> Collection<T> iterate(Function<Pointer, T> iterateFunction) {
+        Collection<T> outs = new ArrayList<>();
+        try (Pointer opaque = new Pointer()) {
+            T out;
+            while ((out = iterateFunction.apply(opaque)) != null) {
+                outs.add(out);
+            }
+        }
+        return Collections.unmodifiableCollection(outs);
+    }
+
+    private static Collection<AVOutputFormat> iterateMuxers() {
+        return iterate(avformat::av_muxer_iterate);
+    }
+
+    private static Collection<AVInputFormat> iterateDemuxers() {
+        return iterate(avformat::av_demuxer_iterate);
+    }
+
+    private static Collection<AVCodec> iterateCodecs() {
+        return iterate(avcodec::av_codec_iterate);
     }
 
     /**
@@ -38,11 +68,10 @@ public final class FFmpeg {
      * @return static AVCodec reference.
      * @throws FFmpegException
      */
-    public static avcodec.AVCodec getCodecByName(String name) throws FFmpegException {
+    public static AVCodec getCodecByName(String name) throws FFmpegException {
         if (name == null) throw new NullPointerException();
-        avcodec.AVCodec currentCodec = null;
 
-        while ((currentCodec = avcodec.av_codec_next(currentCodec)) != null) {
+        for (AVCodec currentCodec : iterateCodecs()) {
             if (currentCodec.name() == null) continue;
             if (currentCodec.name().getString().equalsIgnoreCase(name))
                 return currentCodec;
@@ -57,11 +86,10 @@ public final class FFmpeg {
      * @return static output format reference.
      * @throws FFmpegException
      */
-    public static avformat.AVOutputFormat getOutputFormatByName(String name) throws FFmpegException {
+    public static AVOutputFormat getOutputFormatByName(String name) throws FFmpegException {
         if (name == null) throw new NullPointerException();
-        avformat.AVOutputFormat currentFormat = null;
 
-        while ((currentFormat = avformat.av_oformat_next(currentFormat)) != null) {
+        for (AVOutputFormat currentFormat : iterateMuxers()) {
             if (currentFormat.mime_type() == null) continue;
             if (currentFormat.name().getString().equalsIgnoreCase(name))
                 return currentFormat;
@@ -76,11 +104,11 @@ public final class FFmpeg {
      * @return static output format reference.
      * @throws FFmpegException
      */
-    public static avformat.AVInputFormat getInputFormatByName(String name) throws FFmpegException {
+    public static AVInputFormat getInputFormatByName(String name) throws FFmpegException {
         if (name == null) throw new NullPointerException();
 
         // Find the input format.
-        avformat.AVInputFormat inputFormat = avformat.av_find_input_format(name);
+        AVInputFormat inputFormat = avformat.av_find_input_format(name);
         if (inputFormat == null) throw new FFmpegException("Unknown input format name: " + name);
         return inputFormat;
     }
@@ -91,12 +119,10 @@ public final class FFmpeg {
      * @return static output format reference.
      * @throws FFmpegException
      */
-    public static avformat.AVOutputFormat getOutputFormatByMime(String mimeType) throws FFmpegException {
+    public static AVOutputFormat getOutputFormatByMime(String mimeType) throws FFmpegException {
         if (mimeType == null) throw new NullPointerException();
 
-        avformat.AVOutputFormat currentFormat = null;
-
-        while ((currentFormat = avformat.av_oformat_next(currentFormat)) != null) {
+        for (AVOutputFormat currentFormat : iterateMuxers()) {
             if (currentFormat.mime_type() == null) continue;
             String currentMimeType = currentFormat.mime_type().getString();
             if (currentMimeType != null && currentMimeType.equalsIgnoreCase(mimeType))
@@ -113,12 +139,10 @@ public final class FFmpeg {
      * @return static input format reference.
      * @throws FFmpegException
      */
-    public static avformat.AVInputFormat getInputFormatByMime(String mimeType) throws FFmpegException {
+    public static AVInputFormat getInputFormatByMime(String mimeType) throws FFmpegException {
         if (mimeType == null) throw new NullPointerException();
 
-        avformat.AVInputFormat currentFormat = null;
-
-        while ((currentFormat = avformat.av_iformat_next(currentFormat)) != null) {
+        for (AVInputFormat currentFormat : iterateDemuxers()) {
             if (currentFormat.mime_type() == null) continue;
             String currentMimeType = currentFormat.mime_type().getString();
             if (currentMimeType != null && currentMimeType.equalsIgnoreCase(mimeType))
@@ -163,5 +187,9 @@ public final class FFmpeg {
             throw new FFmpegException("Unknown pixel format: " + pixelFormat);
 
         return pix_fmt;
+    }
+
+    public static double timestampToSeconds(AVRational timebase, long timestamp) {
+        return (double) timestamp * Rational.fromAVRational(timebase).toDouble();
     }
 }

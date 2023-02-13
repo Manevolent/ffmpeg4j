@@ -1,6 +1,8 @@
 package com.github.manevolent.ffmpeg4j.filter.audio;
 
 import com.github.manevolent.ffmpeg4j.*;
+import org.bytedeco.ffmpeg.global.*;
+import org.bytedeco.ffmpeg.swresample.*;
 import org.bytedeco.javacpp.*;
 
 import java.nio.ByteBuffer;
@@ -12,7 +14,7 @@ import java.util.Collections;
 public class FFmpegAudioResampleFilter extends AudioFilter {
     private static final int SAMPLE_FORMAT = avutil.AV_SAMPLE_FMT_FLT;
     public static final int DEFAULT_BUFFER_SIZE = 16 * 1024;
-    private volatile swresample.SwrContext swrContext;
+    private volatile SwrContext swrContext;
 
     private final AudioFormat input, output;
 

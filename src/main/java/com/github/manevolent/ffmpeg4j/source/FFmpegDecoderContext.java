@@ -1,11 +1,12 @@
 package com.github.manevolent.ffmpeg4j.source;
 import com.github.manevolent.ffmpeg4j.FFmpegError;
 import com.github.manevolent.ffmpeg4j.FFmpegException;
-import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avutil;
+import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avutil.*;
+import org.bytedeco.ffmpeg.global.*;
 
 public interface FFmpegDecoderContext {
-    avcodec.AVCodecContext getCodecContext();
+    AVCodecContext getCodecContext();
 
     /**
      * Finds if the decoder is currently decoding, or if it is instead discarding packets.
@@ -18,7 +19,7 @@ public interface FFmpegDecoderContext {
      * @param frame Frame to decode.
      * @throws FFmpegException
      */
-    void decode(avutil.AVFrame frame) throws FFmpegException;
+    void decode(AVFrame frame) throws FFmpegException;
 
     /**
      * Processes frames made available by decodePacket().  This calls decode(), which is typically fulfilled in a
@@ -31,7 +32,7 @@ public interface FFmpegDecoderContext {
 
         int frames_finished = 0;
 
-        avutil.AVFrame frame;
+        AVFrame frame;
         while (ret >= 0) {
             frame = avutil.av_frame_alloc();
             if (frame == null)
@@ -39,7 +40,7 @@ public interface FFmpegDecoderContext {
 
             try {
                 ret = avcodec.avcodec_receive_frame(getCodecContext(), frame);
-                if (ret == -11)
+                if (ret == avutil.AVERROR_EAGAIN())
                     break; // output is not available right now - user must try to send new input
 
                 // Check for misc. errors:
@@ -71,12 +72,12 @@ public interface FFmpegDecoderContext {
      * @return Number of raw frames decoded.
      * @throws FFmpegException
      */
-    default int decodePacket(avcodec.AVPacket packet) throws FFmpegException {
-        int ret = -11, frames_finished = 0;
+    default int decodePacket(AVPacket packet) throws FFmpegException {
+        int ret = avutil.AVERROR_EAGAIN(), frames_finished = 0;
 
-        while (ret == -11) {
+        while (ret == avutil.AVERROR_EAGAIN()) {
             ret = avcodec.avcodec_send_packet(getCodecContext(), packet);
-            if (ret != -11)
+            if (ret != avutil.AVERROR_EAGAIN())
                 FFmpegError.checkError("avcodec_send_packet", ret);
 
             frames_finished += processAvailableFrames();
