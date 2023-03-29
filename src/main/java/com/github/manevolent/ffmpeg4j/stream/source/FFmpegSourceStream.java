@@ -1,11 +1,14 @@
 package com.github.manevolent.ffmpeg4j.stream.source;
 
 import com.github.manevolent.ffmpeg4j.*;
+import com.github.manevolent.ffmpeg4j.output.MediaTargetSubstream;
 import com.github.manevolent.ffmpeg4j.source.FFmpegAudioSourceSubstream;
 import com.github.manevolent.ffmpeg4j.source.FFmpegDecoderContext;
 import com.github.manevolent.ffmpeg4j.source.FFmpegVideoSourceSubstream;
 import com.github.manevolent.ffmpeg4j.source.MediaSourceSubstream;
 import com.github.manevolent.ffmpeg4j.stream.FFmpegFormatContext;
+import com.github.manevolent.ffmpeg4j.stream.output.FFmpegTargetStream;
+import com.github.manevolent.ffmpeg4j.stream.output.TargetStream;
 import org.bytedeco.ffmpeg.avcodec.*;
 import org.bytedeco.ffmpeg.avformat.*;
 import org.bytedeco.ffmpeg.avutil.*;
@@ -15,10 +18,9 @@ import org.bytedeco.javacpp.annotation.Cast;
 
 import java.io.EOFException;
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 public class FFmpegSourceStream extends SourceStream implements FFmpegFormatContext {
     private final FFmpegInput input;
@@ -61,10 +63,10 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
         this.input = input;
     }
 
-    public FFmpegSourceStream(FFmpegInput input, long startTimeMicrosends) {
+    public FFmpegSourceStream(FFmpegInput input, long startTimeMicroseconds) {
         this(input);
 
-        input.getContext().start_time_realtime(startTimeMicrosends);
+        input.getContext().start_time_realtime(startTimeMicroseconds);
     }
 
     public final AVCodecContext.Get_format_AVCodecContext_IntPointer getGet_format_callback() {
@@ -86,8 +88,83 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
         }
     }
 
+    public FFmpegTargetStream createTarget(String formatName, FFmpegOutput output) throws FFmpegException {
+        return createTarget(FFmpeg.getOutputFormatByName(formatName), output);
+    }
+
+    public FFmpegTargetStream createTarget(AVOutputFormat format, FFmpegOutput output) throws FFmpegException {
+        FFmpegTargetStream targetStream = null;
+        try {
+            targetStream = output.open(format);
+            copyToTargetStream(targetStream);
+            return targetStream;
+        } catch (Throwable e) {
+            if (targetStream != null) {
+                try {
+                    targetStream.close();
+                } catch (Exception closeException) {
+                    e.addSuppressed(closeException);
+                }
+            }
+
+            throw e;
+        }
+    }
+
+    public Collection<MediaTargetSubstream<?>> copyToTargetStream(FFmpegTargetStream targetStream) throws FFmpegException  {
+        return copyToTargetStream(targetStream, (source, target) -> { /* Do nothing */ });
+    }
+
+    public Collection<MediaTargetSubstream<?>> copyToTargetStream(FFmpegTargetStream targetStream,
+                                                               BiConsumer<MediaSourceSubstream<?>, MediaTargetSubstream<?>>
+                                                                       modifier) throws FFmpegException  {
+        return copyToTargetStream(targetStream, (source, targetStream_) -> {
+            if (source instanceof FFmpegAudioSourceSubstream) {
+                 return targetStream_.registerAudioSubstream(
+                        ((FFmpegAudioSourceSubstream) source).getCodecContext().codec(),
+                        ((FFmpegAudioSourceSubstream) source).getFormat().getSampleRate(),
+                        ((FFmpegAudioSourceSubstream) source).getFormat().getChannels(),
+                        ((FFmpegAudioSourceSubstream) source).getFormat().getChannelLayout(),
+                        new HashMap<>());
+            } else if (source instanceof FFmpegVideoSourceSubstream) {
+                return targetStream_.registerVideoSubstream(
+                        ((FFmpegVideoSourceSubstream) source).getCodecContext().codec(),
+                        ((FFmpegVideoSourceSubstream) source).getFormat().getWidth(),
+                        ((FFmpegVideoSourceSubstream) source).getFormat().getHeight(),
+                        ((FFmpegVideoSourceSubstream) source).getFormat().getFramesPerSecond(),
+                        new HashMap<>());
+            } else {
+                // We don't know what to do with this
+                return null;
+            }
+        }, modifier);
+    }
+
+    public Collection<MediaTargetSubstream<?>> copyToTargetStream(FFmpegTargetStream targetStream,
+                                                               SubstreamConverter converter,
+                                                               BiConsumer<MediaSourceSubstream<?>, MediaTargetSubstream<?>>
+                                                                       modifier) throws FFmpegException {
+        List<MediaTargetSubstream<?>> targetSubstreams = new ArrayList<>();
+
+        for (MediaSourceSubstream<?> substream : getSubstreams()) {
+            MediaTargetSubstream<?> targetSubstream = converter.convert(substream, targetStream);
+            if (targetSubstream == null) {
+                continue;
+            }
+
+            modifier.accept(substream, targetSubstream);
+            targetSubstreams.add(targetSubstream);
+        }
+
+        return targetSubstreams;
+    }
+
     @Override
     public List<MediaSourceSubstream> getSubstreams() {
+        if (!registered) {
+            throw new IllegalStateException("Substreams are not yet registered with registerStreams()");
+        }
+
         return substreamList;
     }
 
@@ -287,5 +364,10 @@ public class FFmpegSourceStream extends SourceStream implements FFmpegFormatCont
     @Override
     public AVFormatContext getFormatContext() {
         return input.getContext();
+    }
+
+    public interface SubstreamConverter {
+        MediaTargetSubstream<?> convert(MediaSourceSubstream<?> source, FFmpegTargetStream targetStream)
+                throws FFmpegException;
     }
 }

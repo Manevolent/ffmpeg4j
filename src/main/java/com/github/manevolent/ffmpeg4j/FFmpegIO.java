@@ -1,5 +1,6 @@
 package com.github.manevolent.ffmpeg4j;
 
+import com.github.manevolent.ffmpeg4j.stream.output.FFmpegTargetStream;
 import org.bytedeco.ffmpeg.avformat.*;
 import org.bytedeco.ffmpeg.global.*;
 import org.bytedeco.javacpp.*;
@@ -313,7 +314,7 @@ public final class FFmpegIO implements AutoCloseable {
         return ioStateId;
     }
 
-    public static FFmpegIO openInput(File file, int bufferSize) throws IOException, FFmpegException {
+    public static FFmpegInput openInput(File file, int bufferSize) throws IOException, FFmpegException {
         return openInputStream(Files.newInputStream(file.toPath()), bufferSize);
     }
 
@@ -323,7 +324,7 @@ public final class FFmpegIO implements AutoCloseable {
      * @param bufferSize buffer size of the input.
      * @return FFmpegSource instance which points to the input stream provided.
      */
-    public static FFmpegIO openInputStream(final InputStream _inputStream, final int bufferSize)
+    public static FFmpegInput openInputStream(final InputStream _inputStream, final int bufferSize)
             throws FFmpegException {
         Objects.requireNonNull(_inputStream, "Input stream cannot be null");
 
@@ -358,12 +359,11 @@ public final class FFmpegIO implements AutoCloseable {
             setIOState(ioStateId, state);
 
             Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "opened input state id=" + ioStateId);
-            return new FFmpegIO(context, state);
+            return new FFmpegInput(new FFmpegIO(context, state));
         }
     }
 
-
-    public static FFmpegIO openOutput(File file, int bufferSize) throws IOException, FFmpegException {
+    public static FFmpegOutput openOutput(File file, int bufferSize) throws IOException, FFmpegException {
         return openOutputStream(Files.newOutputStream(file.toPath()), bufferSize);
     }
 
@@ -373,7 +373,7 @@ public final class FFmpegIO implements AutoCloseable {
      * @param bufferSize buffer size of the input.
      * @return FFmpegSource instance which points to the input stream provided.
      */
-    public static FFmpegIO openOutputStream(final OutputStream _outputStream, final int bufferSize)
+    public static FFmpegOutput openOutputStream(final OutputStream _outputStream, final int bufferSize)
             throws FFmpegException {
         synchronized (ioLock) {
             // Lock an IOSTATE
@@ -406,7 +406,7 @@ public final class FFmpegIO implements AutoCloseable {
             setIOState(ioStateId, state);
 
             Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "opened output state id=" + ioStateId);
-            return new FFmpegIO(context, state);
+            return new FFmpegOutput(new FFmpegIO(context, state));
         }
     }
 
@@ -466,21 +466,30 @@ public final class FFmpegIO implements AutoCloseable {
         }
     }
 
-    public static FFmpegIO openNativeUrlOutput(String path) {
+    public static FFmpegOutput openNativeUrlOutput(String path) {
         AVIOContext context = new AVIOContext();
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "open native output stream: " + path + "...");
         avformat.avio_open(context, path, avformat.AVIO_FLAG_WRITE);
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "opened native output stream: " + path + ".");
-        return new FFmpegIO(context, (Closeable) () -> avformat.avio_close(context));
+        return new FFmpegOutput(new FFmpegIO(context, (Closeable) () -> avformat.avio_close(context)));
     }
 
-    public static FFmpegIO openNativeUrlInput(String path) {
+    public static FFmpegInput openNativeUrlInput(String path) {
         AVIOContext context = new AVIOContext();
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "open native input stream: " + path + "...");
         avformat.avio_open(context, path, avformat.AVIO_FLAG_READ);
         Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "opened native input stream: " + path + ".");
-        return new FFmpegIO(context);
+        return new FFmpegInput(new FFmpegIO(context));
     }
+
+    public FFmpegInput asInput() {
+        return new FFmpegInput(this);
+    }
+
+    public FFmpegOutput asOutput() {
+        return new FFmpegOutput(this);
+    }
+
 
     public AVIOContext getContext() {
         return avioContext;

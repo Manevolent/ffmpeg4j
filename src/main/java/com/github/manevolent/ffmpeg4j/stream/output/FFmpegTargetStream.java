@@ -30,6 +30,13 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
 
     private boolean closed;
 
+    public FFmpegTargetStream(AVFormatContext formatContext, FFmpegIO io, FFmpegPacketOutput packetOutput) {
+        this.io = io;
+        this.formatContext = formatContext;
+        setAVIOContext(io.getContext());
+        this.packetOutput = packetOutput;
+    }
+
     public FFmpegTargetStream(String formatName, FFmpegIO io, FFmpegPacketOutput packetOutput) throws FFmpegException {
         this.io = io;
 
@@ -82,6 +89,10 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         }
 
         this.packetOutput = packetOutput;
+    }
+
+    public FFmpegTargetStream(String formatName, String url) throws FFmpegException {
+        this(formatName, url, new FFmpegNativeOutput());
     }
 
     public int substreamCount() {

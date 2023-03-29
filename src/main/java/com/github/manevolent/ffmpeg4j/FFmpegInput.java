@@ -8,6 +8,8 @@ import org.bytedeco.ffmpeg.avutil.*;
 import org.bytedeco.ffmpeg.global.*;
 
 import java.io.InputStream;
+import java.nio.channels.Channel;
+import java.nio.channels.SeekableByteChannel;
 import java.util.logging.Level;
 
 /**
@@ -32,6 +34,10 @@ public class FFmpegInput implements AutoCloseable, FFmpegFormatContext {
 
     public FFmpegInput(InputStream inputStream) throws FFmpegException {
         this(FFmpegIO.openInputStream(inputStream, FFmpegIO.DEFAULT_BUFFER_SIZE));
+    }
+
+    public FFmpegInput(SeekableByteChannel channel) throws FFmpegException {
+        this(FFmpegIO.openChannel(channel, FFmpegIO.DEFAULT_BUFFER_SIZE));
     }
 
     public int substreamCount() {
