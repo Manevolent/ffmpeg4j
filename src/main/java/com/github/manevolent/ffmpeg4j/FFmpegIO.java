@@ -224,7 +224,29 @@ public final class FFmpegIO implements AutoCloseable {
                 @Override
                 public long call(org.bytedeco.javacpp.Pointer pointer,
                                 long position,
-                                int unknown) {
+                                int whence) {
+                    switch (whence) {
+                        case 0:
+                            break;
+                        case avformat.AVSEEK_SIZE:
+                            /**
+                             * Passing this as the "whence" parameter to a seek function causes it to
+                             * return the filesize without seeking anywhere. Supporting this is optional.
+                             * If it is not supported then the seek function will return <0.
+                             */
+                            // Not supported
+                            return -1;
+                        case avformat.AVSEEK_FORCE:
+                            /**
+                              * Oring this flag as into the "whence" parameter to a seek function causes it to
+                              * seek by any means (like reopening and linear reading) or other normally unreasonable
+                              * means that can be extremely slow.
+                              * This may be ignored by the seek code.
+                              */
+                            // Ignore
+                            break;
+                    }
+
                     try {
                         IntPointer ioStatePtr = new IntPointer(pointer);
                         IOState state = IO_STATE_REGISTRY[ioStatePtr.get()];
