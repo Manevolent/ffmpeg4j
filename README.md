@@ -68,115 +68,14 @@ while (true) {
 ### Transcode media
 ```java
 private void transcode(InputStream inputStream,
-                       String formatName,
-                       OutputStream outputStream)
-        throws FFmpegException, IOException {
-    FFmpegIO input;
-    try {
-        input = FFmpegIO.openInputStream(inputStream, FFmpegIO.DEFAULT_BUFFER_SIZE);
-    } catch (Exception ex) {
-        outputStream.close();
-
-       throw new FFmpegException(ex);
-   }
-
-   FFmpegIO output;
-   try {
-       output = FFmpegIO.openOutputStream(outputStream, FFmpegIO.DEFAULT_BUFFER_SIZE);
-   } catch (Exception ex) {
-       outputStream.close();
-
-       try {
-           input.close();
-       } catch (Exception e) {
-           // Do nothing
-       }
-
-       throw new FFmpegException(ex);
-   }
-
-   try {
-       // Open input
-       AVInputFormat inputFormat = FFmpeg.getInputFormatByName(formatName);
-       FFmpegSourceStream sourceStream = new FFmpegInput(input).open(inputFormat);
-       
-       // Read the file header, and register substreams in FFmpeg4j
-       sourceStream.registerStreams();
-
-       FFmpegTargetStream targetStream = new FFmpegTargetStream(
-               downloadProperties.getFormat(), // Output format
-               output,
-               new FFmpegTargetStream.FFmpegNativeOutput()
-       );
-
-       // Audio
-       AudioSourceSubstream defaultAudioSubstream =
-               (AudioSourceSubstream)
-                       sourceStream.getSubstreams().stream().filter(x -> x instanceof AudioSourceSubstream)
-                               .findFirst().orElse(null);
-
-       AudioFilter audioFilter = new FFmpegAudioResampleFilter(
-               defaultAudioSubstream.getFormat(),
-               targetAudioFormat,
-               FFmpegAudioResampleFilter.DEFAULT_BUFFER_SIZE
-       );
-
-       // Video
-       VideoSourceSubstream defaultVideoSubstream =
-               (VideoSourceSubstream)
-                       sourceStream.getSubstreams().stream().filter(x -> x instanceof VideoSourceSubstream)
-                               .findFirst().orElse(null);
-                                    
-       VideoFilter videoFilter = new FFmpegVideoRescaleFilter(
-               defaultVideoSubstream.getFormat(),
-               targetVideoFormat,
-               sourceStream.getPixelFormat()
-       );
-
-       if (targetStream.getSubstreams().size() <= 0)
-           throw new FFmpegException("No substreams to convert");
-
-       try {
-           Transcoder.convert(sourceStream, targetStream, finalAudioFilter, finalVideoFilter, 2D);
-
-           // The following is necessary to keep the resource object held in the database
-           Logger.getGlobal().fine("Completed.");
-       } catch (EOFException e) {
-           // This SHOULD happen
-       } catch (Exception e) {
-           Logger.getGlobal().log(Level.SEVERE, "Problem transcoding media", e);
-       } finally {
-           try {
-               inputStream.close();
-           } catch (IOException e) {
-               Logger.getGlobal().log(Level.WARNING, "Problem closing input stream", e);
-           }
-
-           try {
-               outputStream.close();
-           } catch (IOException e) {
-               Logger.getGlobal().log(Level.WARNING, "Problem closing output stream", e);
-           }
-       }
-   } catch (Exception ex) {
-       try {
-           input.close();
-       } catch (Exception e) {
-           // Do nothing
-       }
-
-       try {
-           output.close();
-       } catch (Exception e) {
-           // Do nothing
-       }
-
-       try {
-           outputStream.close();
-       } catch (Exception e) {
-           // Do nothing
-       }
-
-       throw new FFmpegException(ex);
-   }
+                       String inputFormatName,
+                       SeekableByteChannel outputChannel,
+                       String outputFormatName) throws FFmpegException, IOException {
+	try (FFmpegSourceStream sourceStream = FFmpegIO.openInputStream(inputStream, FFmpegIO.DEFAULT_BUFFER_SIZE).open(inputFormatName);
+	     FFmpegTargetStream targetStream = FFmpegIO.openChannel(outputChannel, FFmpegIO.DEFAULT_BUFFER_SIZE).asOutput().open(outputFormatName)) {
+	    sourceStream.registerStreams();
+	    sourceStream.copyToTargetStream(targetStream);
+	    Transcoder.convert(sourceStream, targetStream, Double.MAX_VALUE);
+	}
 }       
+```
