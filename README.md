@@ -29,7 +29,9 @@ If you want the latest `-SNAPSHOT`:
  - Tested for stability and optimized for the least wrapper overhead
  - Capable of delivering great apps like music bots, video transcoders, and livestream propogation
  - Sensible structure to fit within a Java development environment; don't deal directly with the C-like constructs exposed by JavaCPP.
- - Utilize standard OutputStream and InputStream objects to read and write media, something I desparately needed and couldn't find in other Java FFmpeg wrappers.  Avoid hitting the disk altogether!
+ - Use typical InputStream and OutputStream objects to read and write media.
+ - Use Channels to read and write media when seeking is needed (i.e. MP4 muxing).
+ - Write applications that don't touch the disk (filesystem) for better performance and lower resource cost of in-flight data.
 
 # Examples
 
