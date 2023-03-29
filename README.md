@@ -71,8 +71,8 @@ private void transcode(InputStream inputStream,
                        String inputFormatName,
                        SeekableByteChannel outputChannel,
                        String outputFormatName) throws FFmpegException, IOException {
-	try (FFmpegSourceStream sourceStream = FFmpegIO.openInputStream(inputStream, FFmpegIO.DEFAULT_BUFFER_SIZE).open(inputFormatName);
-	     FFmpegTargetStream targetStream = FFmpegIO.openChannel(outputChannel, FFmpegIO.DEFAULT_BUFFER_SIZE).asOutput().open(outputFormatName)) {
+	try (FFmpegSourceStream sourceStream = FFmpegIO.openInputStream(inputStream).open(inputFormatName);
+	     FFmpegTargetStream targetStream = FFmpegIO.openChannel(outputChannel).asOutput().open(outputFormatName)) {
 	    sourceStream.registerStreams();
 	    sourceStream.copyToTargetStream(targetStream);
 	    Transcoder.convert(sourceStream, targetStream, Double.MAX_VALUE);
