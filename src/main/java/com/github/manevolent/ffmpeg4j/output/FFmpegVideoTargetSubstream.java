@@ -197,6 +197,11 @@ public class FFmpegVideoTargetSubstream
     }
 
     @Override
+    public AVStream getStream() {
+        return stream;
+    }
+
+    @Override
     public FFmpegTargetStream getTargetStream() {
         return targetStream;
     }

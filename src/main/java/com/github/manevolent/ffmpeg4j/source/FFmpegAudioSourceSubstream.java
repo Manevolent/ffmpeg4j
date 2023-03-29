@@ -123,6 +123,11 @@ public class FFmpegAudioSourceSubstream
     }
 
     @Override
+    public AVStream getStream() {
+        return stream;
+    }
+
+    @Override
     public void decode(AVFrame frame) throws FFmpegException {
         int outputCount =
                 (int)Math.min(

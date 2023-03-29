@@ -349,6 +349,11 @@ public class FFmpegAudioTargetSubstream
     }
 
     @Override
+    public AVStream getStream() {
+        return getStream();
+    }
+
+    @Override
     public FFmpegTargetStream getTargetStream() {
         return targetStream;
     }

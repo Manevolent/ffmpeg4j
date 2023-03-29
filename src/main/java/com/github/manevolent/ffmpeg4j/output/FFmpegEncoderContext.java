@@ -1,5 +1,6 @@
 package com.github.manevolent.ffmpeg4j.output;
 
+import com.github.manevolent.ffmpeg4j.FFmpegStreamContext;
 import com.github.manevolent.ffmpeg4j.FFmpegError;
 import com.github.manevolent.ffmpeg4j.FFmpegException;
 import com.github.manevolent.ffmpeg4j.stream.output.FFmpegTargetStream;
@@ -9,10 +10,10 @@ import org.bytedeco.ffmpeg.global.*;
 
 import java.io.EOFException;
 
-public interface FFmpegEncoderContext {
+public interface FFmpegEncoderContext extends FFmpegStreamContext {
+
     void writePacket(AVPacket packet) throws FFmpegException, EOFException;
 
-    AVCodecContext getCodecContext();
     FFmpegTargetStream getTargetStream();
 
     /**

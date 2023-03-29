@@ -1,12 +1,14 @@
 package com.github.manevolent.ffmpeg4j.source;
 import com.github.manevolent.ffmpeg4j.FFmpegError;
 import com.github.manevolent.ffmpeg4j.FFmpegException;
+import com.github.manevolent.ffmpeg4j.FFmpegStreamContext;
+import com.github.manevolent.ffmpeg4j.output.FFmpegEncoderContext;
 import org.bytedeco.ffmpeg.avcodec.*;
+import org.bytedeco.ffmpeg.avformat.AVStream;
 import org.bytedeco.ffmpeg.avutil.*;
 import org.bytedeco.ffmpeg.global.*;
 
-public interface FFmpegDecoderContext {
-    AVCodecContext getCodecContext();
+public interface FFmpegDecoderContext extends FFmpegStreamContext {
 
     /**
      * Finds if the decoder is currently decoding, or if it is instead discarding packets.

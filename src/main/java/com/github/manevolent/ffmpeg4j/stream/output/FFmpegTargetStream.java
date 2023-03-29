@@ -166,21 +166,14 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         if (best_pix_fmt < 0) throw new FFmpegException("couldn't find comparable pixel format for encoder");
         codecContext.pix_fmt(best_pix_fmt);
 
-        // long list of things not used, refer to options dict:
-        //codecContext.bit_rate(bit_rate);
-        //codecContext.gop_size(12); /* emit one intra frame every twelve frames at most */
-        //codecContext.qmin(10);
-        //codecContext.qmax(51);
-        //codecContext.color_trc(avutil.AVCOL_TRC_BT709);
-        //codecContext.profile(144);
-        //codecContext.color_range(avutil.AVCOL_RANGE_MPEG);
-        //codecContext.colorspace(avutil.AVCOL_SPC_BT709);
-        //codecContext.rc_buffer_size(bit_rate);
-        //codecContext.rc_max_rate(bit_rate);
-        //codecContext.rc_min_rate(bit_rate);
-
         codecContext.width(width);
         codecContext.height(height);
+
+        stream.codecpar().codec_id(codec.id());
+        stream.codecpar().width(width);
+        stream.codecpar().height(height);
+        stream.codecpar().format(best_pix_fmt);
+
         Rational timeBase = Rational.toRational(1D/fps);
         codecContext.time_base(avutil.av_make_q((int) timeBase.getNumerator(), (int) timeBase.getDenominator()));
         Rational framerate = Rational.toRational(fps);
