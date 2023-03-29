@@ -22,11 +22,9 @@ public class FFmpegInputTest {
 
     private static void withSampleFile(TestRunner<FFmpegSourceStream> test) throws Exception {
         InputStream resource = FFmpegInputTest.class.getResourceAsStream("/sample-mp4-file-small.mp4");
-        try (FFmpegIO io = FFmpegIO.openInputStream(resource, FFmpegIO.DEFAULT_BUFFER_SIZE)) {
-            try (FFmpegInput input = new FFmpegInput(io)) {
-                try (FFmpegSourceStream sourceStream = input.open("mp4")) {
-                    test.runTest(sourceStream);
-                }
+        try (FFmpegInput input = FFmpegIO.openInputStream(resource, FFmpegIO.DEFAULT_BUFFER_SIZE)) {
+            try (FFmpegSourceStream sourceStream = input.open("mp4")) {
+                test.runTest(sourceStream);
             }
         }
     }
