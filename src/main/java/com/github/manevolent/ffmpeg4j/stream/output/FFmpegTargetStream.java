@@ -284,21 +284,11 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
                 throw new FFmpegException("codec does not support channel layout: " + channel_layout);
         }
 
-        //codecContext.bit_rate(bit_rate);
-        //codecContext.bit_rate_tolerance(0);
-        //codecContext.qmin(10);
-        //codecContext.qmax(51);
-        //codecContext.global_quality(10);
         codecContext.sample_fmt(sampleFormat);
         codecContext.sample_rate(sample_rate);
         codecContext.channels(channels);
         codecContext.channel_layout(channel_layout);
-
-        stream.codecpar().codec_id(codec.id());
-        stream.codecpar().format(sampleFormat);
-        stream.codecpar().sample_rate(sample_rate);
-        stream.codecpar().channels(channels);
-        stream.codecpar().channel_layout(channel_layout);
+        codecContext.frame_size();
 
         // some formats want stream headers to be separate
         if ((formatContext.oformat().flags() & avformat.AVFMT_GLOBALHEADER) == avformat.AVFMT_GLOBALHEADER)
@@ -318,6 +308,13 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
                 "avcodec_open2",
                 avcodec.avcodec_open2(codecContext, codec, optionDictionary)
         );
+
+        stream.codecpar().codec_id(codec.id());
+        stream.codecpar().format(sampleFormat);
+        stream.codecpar().sample_rate(sample_rate);
+        stream.codecpar().channels(channels);
+        stream.codecpar().channel_layout(channel_layout);
+        stream.codecpar().frame_size(codecContext.frame_size());
 
         FFmpegAudioTargetSubstream audioTargetSubstream = new FFmpegAudioTargetSubstream(
                 this,
