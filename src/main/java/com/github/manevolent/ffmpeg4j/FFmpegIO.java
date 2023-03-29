@@ -5,8 +5,13 @@ import org.bytedeco.ffmpeg.global.*;
 import org.bytedeco.javacpp.*;
 
 import java.io.*;
+import java.nio.channels.ByteChannel;
+import java.nio.channels.Channel;
+import java.nio.channels.Channels;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.file.*;
 import java.util.*;
+import java.util.function.Function;
 import java.util.logging.Level;
 
 // http://www.codeproject.com/Tips/489450/Creating-Custom-FFmpeg-IO-Context
@@ -44,6 +49,7 @@ public final class FFmpegIO implements AutoCloseable {
          * While true, this IOState is considered in-use.
          */
         public boolean open = true;
+        public Function<Long, Long> seek;
 
         public int num_ops = 0, total = 0;
 
@@ -55,12 +61,14 @@ public final class FFmpegIO implements AutoCloseable {
                         AVIOContext context,
                         InputStream inputStream,
                         OutputStream outputStream,
-                        Pointer internalBufferPointer) {
+                        Pointer internalBufferPointer,
+                        Function<Long, Long> seek) {
             this.id = id;
             this.context = context;
             this.inputStream = inputStream;
             this.outputStream = outputStream;
             this.internalBufferPointer = internalBufferPointer;
+            this.seek = seek;
         }
 
         @Override
@@ -90,6 +98,10 @@ public final class FFmpegIO implements AutoCloseable {
 
         public int getId() {
             return id;
+        }
+
+        public long seek(long position) {
+            return seek.apply(position);
         }
     }
 
@@ -207,6 +219,30 @@ public final class FFmpegIO implements AutoCloseable {
             };
 
 
+    private static final Seek_Pointer_long_int seek =
+            new Seek_Pointer_long_int() {
+                @Override
+                public long call(org.bytedeco.javacpp.Pointer pointer,
+                                long position,
+                                int unknown) {
+                    try {
+                        IntPointer ioStatePtr = new IntPointer(pointer);
+                        IOState state = IO_STATE_REGISTRY[ioStatePtr.get()];
+                        if (state == null || !state.open) throw new NullPointerException();
+
+                        if (state.seek == null) {
+                            return -1;
+                        }
+
+                        return state.seek(position);
+                    } catch (Throwable e) {
+                        Logging.LOGGER.log(Level.WARNING, "problem in FFmpeg IO write", e);
+                        return -1;
+                    }
+                }
+            };
+
+
     public FFmpegIO(AVIOContext avioContext, AutoCloseable... autoCloseables) {
         this.avioContext = avioContext;
         this.closeables = autoCloseables;
@@ -282,7 +318,7 @@ public final class FFmpegIO implements AutoCloseable {
                     null,
                     read,
                     null,
-                    null
+                    seek
             );
 
             //Returns Allocated AVIOContext or NULL on failure.
@@ -296,7 +332,7 @@ public final class FFmpegIO implements AutoCloseable {
             context.opaque(intPointer);
             context.write_flag(0);
 
-            IOState state = new IOState(ioStateId, context, _inputStream, null, internalBufferPointer);
+            IOState state = new IOState(ioStateId, context, _inputStream, null, internalBufferPointer, null);
             setIOState(ioStateId, state);
 
             Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "opened input state id=" + ioStateId);
@@ -310,7 +346,7 @@ public final class FFmpegIO implements AutoCloseable {
     }
 
     /**
-     * Opens a custom AVIOContext based around the managed OutputStream proved.
+     * Opens a custom AVIOContext based around the managed OutputStream provided.
      * @param _outputStream OutputStream instance to have FFmpeg read from.
      * @param bufferSize buffer size of the input.
      * @return FFmpegSource instance which points to the input stream provided.
@@ -330,7 +366,7 @@ public final class FFmpegIO implements AutoCloseable {
                     null,
                     null,
                     write,
-                    null
+                    seek
             );
 
             //Returns Allocated AVIOContext or NULL on failure.
@@ -344,7 +380,63 @@ public final class FFmpegIO implements AutoCloseable {
             context.opaque(intPointer);
             context.write_flag(1);
 
-            IOState state = new IOState(ioStateId, context, null, _outputStream, internalBufferPointer);
+            IOState state = new IOState(ioStateId, context, null, _outputStream, internalBufferPointer, null);
+            setIOState(ioStateId, state);
+
+            Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "opened output state id=" + ioStateId);
+            return new FFmpegIO(context, state);
+        }
+    }
+
+    /**
+     * Opens a custom AVIOContext based around the managed channel provided. This context will be seekable.
+     * @param channel Channel instance to have FFmpeg read from.
+     * @param bufferSize buffer size of the input.
+     * @return FFmpegSource instance which points to the input stream provided.
+     */
+    public static FFmpegIO openChannel(final SeekableByteChannel channel, final int bufferSize)
+            throws FFmpegException {
+        synchronized (ioLock) {
+            // Lock an IOSTATE
+            int ioStateId = allocateIOStateId();
+
+            // Open the underlying AVIOContext.
+            Pointer internalBufferPointer = avutil.av_malloc(bufferSize); // sizeof() == 1 here
+
+            final AVIOContext context = avformat.avio_alloc_context(
+                    new BytePointer(internalBufferPointer), bufferSize, // internal Buffer and its size
+                    1, // write_flag
+                    null,
+                    read,
+                    write,
+                    seek
+            );
+
+            //Returns Allocated AVIOContext or NULL on failure.
+            if (context == null) throw new NullPointerException();
+
+            context.seekable(1);
+
+            IntPointer intPointer = new IntPointer(avutil.av_malloc(4));
+            intPointer.put(ioStateId);
+
+            context.opaque(intPointer);
+            context.write_flag(1);
+
+            IOState state = new IOState(ioStateId, context,
+                    Channels.newInputStream(channel),
+                    Channels.newOutputStream(channel),
+                    internalBufferPointer,
+                    (pos) -> {
+                        try {
+                            channel.position(pos);
+                            return channel.position();
+                        } catch (IOException e) {
+                            return -1L;
+                        }
+                    }
+            );
+
             setIOState(ioStateId, state);
 
             Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "opened output state id=" + ioStateId);
