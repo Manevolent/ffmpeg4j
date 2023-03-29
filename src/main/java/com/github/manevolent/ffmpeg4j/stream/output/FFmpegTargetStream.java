@@ -294,6 +294,12 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         codecContext.channels(channels);
         codecContext.channel_layout(channel_layout);
 
+        stream.codecpar().codec_id(codec.id());
+        stream.codecpar().format(sampleFormat);
+        stream.codecpar().sample_rate(sample_rate);
+        stream.codecpar().channels(channels);
+        stream.codecpar().channel_layout(channel_layout);
+
         // some formats want stream headers to be separate
         if ((formatContext.oformat().flags() & avformat.AVFMT_GLOBALHEADER) == avformat.AVFMT_GLOBALHEADER)
             codecContext.flags(codecContext.flags() | avcodec.AV_CODEC_FLAG_GLOBAL_HEADER);
