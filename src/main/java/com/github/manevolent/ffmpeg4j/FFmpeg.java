@@ -81,6 +81,44 @@ public final class FFmpeg {
     }
 
     /**
+     * Finds an output format by extension
+     * @param extension Output format extension
+     * @return static output format reference.
+     * @throws FFmpegException
+     */
+    public static AVOutputFormat getOutputFormatByExtension(String extension) throws FFmpegException {
+        if (extension == null) throw new NullPointerException();
+
+        for (AVOutputFormat currentFormat : iterateMuxers()) {
+            if (currentFormat.extensions() == null) continue;
+            String[] extensions = currentFormat.extensions().getString().split(",");
+            if (Arrays.stream(extensions).anyMatch(x -> x.equalsIgnoreCase(extension)))
+                return currentFormat;
+        }
+
+        throw new FFmpegException("Unknown output format extension: " + extension);
+    }
+
+    /**
+     * Finds an input format by extension
+     * @param extension Input format extension
+     * @return static input format reference.
+     * @throws FFmpegException
+     */
+    public static AVInputFormat getInputFormatByExtension(String extension) throws FFmpegException {
+        if (extension == null) throw new NullPointerException();
+
+        for (AVInputFormat currentFormat : iterateDemuxers()) {
+            if (currentFormat.extensions() == null) continue;
+            String[] extensions = currentFormat.extensions().getString().split(",");
+            if (Arrays.stream(extensions).anyMatch(x -> x.equalsIgnoreCase(extension)))
+                return currentFormat;
+        }
+
+        throw new FFmpegException("Unknown input format extension: " + extension);
+    }
+
+    /**
      * Finds an output format by name
      * @param name Output format name
      * @return static output format reference.
@@ -90,7 +128,7 @@ public final class FFmpeg {
         if (name == null) throw new NullPointerException();
 
         for (AVOutputFormat currentFormat : iterateMuxers()) {
-            if (currentFormat.mime_type() == null) continue;
+            if (currentFormat.name() == null) continue;
             if (currentFormat.name().getString().equalsIgnoreCase(name))
                 return currentFormat;
         }
@@ -124,8 +162,8 @@ public final class FFmpeg {
 
         for (AVOutputFormat currentFormat : iterateMuxers()) {
             if (currentFormat.mime_type() == null) continue;
-            String currentMimeType = currentFormat.mime_type().getString();
-            if (currentMimeType != null && currentMimeType.equalsIgnoreCase(mimeType))
+            String[] mimeTypes = currentFormat.mime_type().getString().split(",");
+            if (Arrays.stream(mimeTypes).anyMatch(x -> x.equalsIgnoreCase(mimeType)))
                 return currentFormat;
         }
 
@@ -144,8 +182,8 @@ public final class FFmpeg {
 
         for (AVInputFormat currentFormat : iterateDemuxers()) {
             if (currentFormat.mime_type() == null) continue;
-            String currentMimeType = currentFormat.mime_type().getString();
-            if (currentMimeType != null && currentMimeType.equalsIgnoreCase(mimeType))
+            String[] mimeTypes = currentFormat.mime_type().getString().split(",");
+            if (Arrays.stream(mimeTypes).anyMatch(x -> x.equalsIgnoreCase(mimeType)))
                 return currentFormat;
         }
 

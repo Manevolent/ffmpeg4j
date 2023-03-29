@@ -66,7 +66,23 @@ public class FFmpegTest {
     public void testGetOutputFormatByMime() throws FFmpegException {
         AVOutputFormat mp4Format = FFmpeg.getOutputFormatByMime("audio/mpeg");
         assertEquals("mp2", mp4Format.name().getString());
+
+        AVOutputFormat mp4VideoFormat = FFmpeg.getOutputFormatByMime("video/mp4");
+        assertEquals("ipod", mp4VideoFormat.name().getString());
     }
+
+    @Test
+    public void testGetOutputFormatByExtension() throws FFmpegException {
+        AVOutputFormat mp4Format = FFmpeg.getOutputFormatByExtension("mp4");
+        assertEquals("mp4", mp4Format.name().getString());
+    }
+
+    @Test
+    public void testGetInputFormatByExtension() throws FFmpegException {
+        AVInputFormat mp4VideoFormat = FFmpeg.getInputFormatByExtension("mp4");
+        assertEquals("mov,mp4,m4a,3gp,3g2,mj2", mp4VideoFormat.name().getString());
+    }
+
 
     @Test(expected = FFmpegException.class)
     public void testGetOutputFormatByMime_Invalid() throws FFmpegException {
