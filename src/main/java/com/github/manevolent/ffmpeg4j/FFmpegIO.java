@@ -314,8 +314,16 @@ public final class FFmpegIO implements AutoCloseable {
         return ioStateId;
     }
 
+    public static FFmpegInput openInput(File file) throws IOException, FFmpegException {
+        return openInputStream(Files.newInputStream(file.toPath()), DEFAULT_BUFFER_SIZE);
+    }
+
     public static FFmpegInput openInput(File file, int bufferSize) throws IOException, FFmpegException {
         return openInputStream(Files.newInputStream(file.toPath()), bufferSize);
+    }
+
+    public static FFmpegInput openInputStream(final InputStream _inputStream) throws FFmpegException {
+        return openInputStream(_inputStream, DEFAULT_BUFFER_SIZE);
     }
 
     /**
@@ -367,6 +375,15 @@ public final class FFmpegIO implements AutoCloseable {
         return openOutputStream(Files.newOutputStream(file.toPath()), bufferSize);
     }
 
+    public static FFmpegOutput openOutput(File file) throws IOException, FFmpegException {
+        return openOutputStream(Files.newOutputStream(file.toPath()), FFmpegIO.DEFAULT_BUFFER_SIZE);
+    }
+
+    public static FFmpegOutput openOutputStream(final OutputStream _outputStream)
+            throws FFmpegException {
+        return openOutputStream(_outputStream, DEFAULT_BUFFER_SIZE);
+    }
+
     /**
      * Opens a custom AVIOContext based around the managed OutputStream provided.
      * @param _outputStream OutputStream instance to have FFmpeg read from.
@@ -408,6 +425,10 @@ public final class FFmpegIO implements AutoCloseable {
             Logging.LOGGER.log(Logging.DEBUG_LOG_LEVEL, "opened output state id=" + ioStateId);
             return new FFmpegOutput(new FFmpegIO(context, state));
         }
+    }
+
+    public static FFmpegIO openChannel(final SeekableByteChannel channel) throws FFmpegException {
+        return openChannel(channel, DEFAULT_BUFFER_SIZE);
     }
 
     /**
