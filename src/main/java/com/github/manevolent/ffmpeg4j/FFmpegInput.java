@@ -6,7 +6,6 @@ import org.bytedeco.ffmpeg.avcodec.*;
 import org.bytedeco.ffmpeg.avformat.*;
 import org.bytedeco.ffmpeg.avutil.*;
 import org.bytedeco.ffmpeg.global.*;
-import org.bytedeco.javacpp.PointerPointer;
 
 import java.io.InputStream;
 import java.nio.channels.Channel;

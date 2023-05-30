@@ -1,7 +1,6 @@
 import com.github.manevolent.ffmpeg4j.AudioFormat;
 import com.github.manevolent.ffmpeg4j.FFmpegIO;
 import com.github.manevolent.ffmpeg4j.source.AudioSourceSubstream;
-import com.github.manevolent.ffmpeg4j.source.MediaSourceSubstream;
 import com.github.manevolent.ffmpeg4j.stream.output.FFmpegTargetStream;
 import com.github.manevolent.ffmpeg4j.stream.source.FFmpegSourceStream;
 import com.github.manevolent.ffmpeg4j.transcoder.Transcoder;
@@ -15,7 +14,7 @@ import java.util.Map;
 
 public class FFmpegTranscribeTest {
     @Test
-    public void testTranscribe() throws Exception {
+    public void testTranscode() throws Exception {
         Map<String, String> options = new HashMap<>();
         options.put("strict", "experimental");
         Path tempFile = Files.createTempFile("temp-audio", null);
