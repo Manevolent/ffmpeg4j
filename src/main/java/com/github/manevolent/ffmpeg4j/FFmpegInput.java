@@ -127,6 +127,9 @@ public class FFmpegInput implements AutoCloseable, FFmpegFormatContext {
             //  avcodec_open. Mind you, it's been a while since I looked at this stuff.
             codecContext.get_format(sourceStream.getGet_format_callback());
 
+            // Copy over codec parameters to the context, this is required in some cases
+            avcodec.avcodec_parameters_to_context(codecContext, formatContext.streams(stream_index).codecpar());
+
             FFmpegError.checkError("avcodec_open2", avcodec.avcodec_open2(codecContext, codec, (AVDictionary) null));
         }
 

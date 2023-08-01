@@ -298,6 +298,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         codecContext.sample_fmt(sampleFormat);
         codecContext.sample_rate(sample_rate);
         codecContext.channels(channels);
+        codecContext.codec_type(codec.type());
         codecContext.channel_layout(channel_layout);
         codecContext.frame_size();
 
@@ -325,6 +326,7 @@ public class FFmpegTargetStream extends TargetStream implements FFmpegFormatCont
         stream.codecpar().sample_rate(sample_rate);
         stream.codecpar().channels(channels);
         stream.codecpar().channel_layout(channel_layout);
+        stream.codecpar().codec_type(codec.type());
         stream.codecpar().frame_size(codecContext.frame_size());
 
         FFmpegAudioTargetSubstream audioTargetSubstream = new FFmpegAudioTargetSubstream(
