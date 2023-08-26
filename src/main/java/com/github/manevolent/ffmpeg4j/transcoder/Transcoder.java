@@ -2,6 +2,7 @@ package com.github.manevolent.ffmpeg4j.transcoder;
 
 import com.github.manevolent.ffmpeg4j.AudioFrame;
 import com.github.manevolent.ffmpeg4j.Logging;
+import com.github.manevolent.ffmpeg4j.MediaStream;
 import com.github.manevolent.ffmpeg4j.VideoFrame;
 import com.github.manevolent.ffmpeg4j.filter.audio.AudioFilter;
 import com.github.manevolent.ffmpeg4j.filter.audio.AudioFilterNone;
@@ -147,6 +148,10 @@ public class Transcoder {
             for (VideoFrame frame : videoFrames)
                 for (VideoFrame filteredFrame : videoFilter.apply(frame))
                     targetStream.getVideoTargetStream().write(filteredFrame);
+    }
+
+    public double getTotalPosition() {
+        return sourceStream.getSubstreams().stream().mapToDouble(MediaStream::getPosition).sum();
     }
 
     public static void convert(SourceStream sourceStream, TargetStream targetStream,
